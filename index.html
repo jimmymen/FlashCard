@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>背题程序</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            padding: 30px;
+            text-align: center;
+            color: white;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        
+        .stat-item {
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .nav-tabs {
+            display: flex;
+            border-bottom: 2px solid #eee;
+            margin-bottom: 30px;
+        }
+        
+        .tab {
+            padding: 15px 25px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 1.1rem;
+            color: #666;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        
+        .tab.active {
+            color: #4facfe;
+            border-bottom-color: #4facfe;
+        }
+        
+        .tab:hover {
+            background: #f8f9fa;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        /* 学习模式样式 */
+        .study-card {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 20px;
+            min-height: 200px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        .question {
+            font-size: 1.3rem;
+            line-height: 1.6;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        
+        .answer {
+            font-size: 1.2rem;
+            line-height: 1.6;
+            color: #2d3748;
+            background: #e6fffa;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid #38b2ac;
+            display: none;
+        }
+        
+        .answer.show {
+            display: block;
+            animation: fadeIn 0.3s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        /* 标记按钮 */
+        .mark-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 15px;
+        }
+        
+        .mark-btn {
+            padding: 8px 16px;
+            border: 2px solid;
+            border-radius: 20px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+        
+        .mark-btn.unmarked {
+            border-color: #cbd5e0;
+            color: #718096;
+        }
+        
+        .mark-btn.uncertain {
+            border-color: #fbbf24;
+            color: #f59e0b;
+        }
+        
+        .mark-btn.important {
+            border-color: #ef4444;
+            color: #dc2626;
+        }
+        
+        .mark-btn.difficult {
+            border-color: #8b5cf6;
+            color: #7c3aed;
+        }
+        
+        .mark-btn.active {
+            background: currentColor;
+            color: white;
+        }
+        
+        /* 题目管理样式 */
+        .import-section {
+            margin-bottom: 30px;
+        }
+        
+        .import-methods {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .import-method {
+            flex: 1;
+            padding: 20px;
+            border: 2px dashed #cbd5e0;
+            border-radius: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .import-method:hover {
+            border-color: #4facfe;
+            background: #f0f9ff;
+        }
+        
+        .textarea-input {
+            width: 100%;
+            min-height: 200px;
+            padding: 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 1rem;
+            line-height: 1.5;
+            resize: vertical;
+        }
+        
+        .file-input {
+            display: none;
+        }
+        
+        /* 题目列表样式 */
+        .question-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .question-item {
+            padding: 15px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            background: white;
+        }
+        
+        .question-text {
+            font-weight: 500;
+            margin-bottom: 5px;
+        }
+        
+        .answer-text {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .question-mark {
+            float: right;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            color: white;
+        }
+        
+        /* 复习模式样式 */
+        .review-filters {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .filter-btn {
+            padding: 8px 16px;
+            border: 2px solid;
+            border-radius: 20px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+        
+        .no-data {
+            text-align: center;
+            color: #666;
+            font-size: 1.2rem;
+            padding: 60px 20px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                margin: 0;
+                border-radius: 0;
+            }
+            
+            .header {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+            
+            .stats {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .controls {
+                flex-direction: column;
+            }
+            
+            .mark-buttons {
+                flex-wrap: wrap;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 背题程序</h1>
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-number" id="totalCount">0</div>
+                    <div>总题数</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="studiedCount">0</div>
+                    <div>已学习</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="markedCount">0</div>
+                    <div>已标记</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" id="progressPercent">0%</div>
+                    <div>进度</div>
+                </div>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressBar"></div>
+            </div>
+        </div>
+        
+        <div class="content">
+            <div class="nav-tabs">
+                <button class="tab active" onclick="switchTab('study')">学习模式</button>
+                <button class="tab" onclick="switchTab('manage')">题目管理</button>
+                <button class="tab" onclick="switchTab('review')">复习模式</button>
+            </div>
+            
+            <!-- 学习模式 -->
+            <div id="studyTab" class="tab-content active">
+                <div id="studyContent">
+                    <div class="no-data">
+                        <p>📚 还没有题目，请先在"题目管理"中添加题目</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 题目管理 -->
+            <div id="manageTab" class="tab-content">
+                <div class="import-section">
+                    <h3>📥 导入题目</h3>
+                    <div class="import-methods">
+                        <div class="import-method" onclick="showTextImport()">
+                            <h4>📝 文本导入</h4>
+                            <p>复制粘贴题目文本</p>
+                        </div>
+                        <div class="import-method" onclick="document.getElementById('fileInput').click()">
+                            <h4>📁 文件导入</h4>
+                            <p>选择txt文件</p>
+                        </div>
+                    </div>
+                    
+                    <div id="textImportArea" style="display: none;">
+                        <textarea id="importText" class="textarea-input" placeholder="请输入题目，支持以下格式：
+
+格式1（空行分隔）：
+这是第一道题目？
+这是第一道题的答案
+
+这是第二道题目？
+这是第二道题的答案
+
+格式2（标记符）：
+Q: 这是第一道题目？
+A: 这是第一道题的答案
+
+Q: 这是第二道题目？
+A: 这是第二道题的答案
+
+格式3（序号）：
+1. 这是第一道题目？
+答案：这是第一道题的答案
+
+2. 这是第二道题目？
+答案：这是第二道题的答案"></textarea>
+                        <div class="controls">
+                            <button class="btn btn-primary" onclick="importQuestions()">导入题目</button>
+                            <button class="btn btn-secondary" onclick="hideTextImport()">取消</button>
+                        </div>
+                    </div>
+                    
+                    <input type="file" id="fileInput" class="file-input" accept=".txt" onchange="importFromFile(event)">
+                </div>
+                
+                <div>
+                    <h3>📋 题目列表 (<span id="questionCount">0</span>题)</h3>
+                    <div id="questionList" class="question-list"></div>
+                    <div class="controls" style="margin-top: 20px;">
+                        <button class="btn btn-secondary" onclick="clearAllQuestions()">清空所有题目</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 复习模式 -->
+            <div id="reviewTab" class="tab-content">
+                <div class="review-filters">
+                    <button class="filter-btn uncertain" onclick="toggleFilter('uncertain')">不确定</button>
+                    <button class="filter-btn important" onclick="toggleFilter('important')">重要</button>
+                    <button class="filter-btn difficult" onclick="toggleFilter('difficult')">易错</button>
+                    <button class="btn btn-primary" onclick="startReview()">开始复习</button>
+                </div>
+                <div id="reviewContent">
+                    <div class="no-data">
+                        <p>🔄 请选择要复习的标记类型，然后点击"开始复习"</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let questions = [];
+        let currentIndex = 0;
+        let showingAnswer = false;
+        let studyMode = 'normal'; // normal 或 review
+        let reviewFilters = [];
+        let reviewQuestions = [];
+
+        // 页面加载时初始化
+        window.onload = function() {
+            loadQuestions();
+            updateStats();
+            if (questions.length > 0) {
+                showQuestion();
+            }
+        };
+
+        // 切换标签页
+        function switchTab(tab) {
+            // 移除所有活动状态
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            
+            // 激活当前标签
+            event.target.classList.add('active');
+            document.getElementById(tab + 'Tab').classList.add('active');
+            
+            // 刷新对应内容
+            if (tab === 'manage') {
+                displayQuestionList();
+            }
+        }
+
+        // 显示文本导入区域
+        function showTextImport() {
+            document.getElementById('textImportArea').style.display = 'block';
+        }
+
+        // 隐藏文本导入区域
+        function hideTextImport() {
+            document.getElementById('textImportArea').style.display = 'none';
+            document.getElementById('importText').value = '';
+        }
+
+        // 解析题目文本
+        function parseQuestions(text) {
+            const questions = [];
+            const lines = text.split('\n').map(line => line.trim()).filter(line => line);
+            
+            // 格式1: Q: A: 标记符格式
+            if (text.includes('Q:') && text.includes('A:')) {
+                let currentQ = '';
+                let currentA = '';
+                let isQuestion = false;
+                
+                for (let line of lines) {
+                    if (line.startsWith('Q:') || line.startsWith('问：')) {
+                        if (currentQ && currentA) {
+                            questions.push({
+                                question: currentQ,
+                                answer: currentA,
+                                mark: 'unmarked',
+                                studied: false
+                            });
+                        }
+                        currentQ = line.replace(/^(Q:|问：)/, '').trim();
+                        currentA = '';
+                        isQuestion = true;
+                    } else if (line.startsWith('A:') || line.startsWith('答：')) {
+                        currentA = line.replace(/^(A:|答：)/, '').trim();
+                        isQuestion = false;
+                    } else if (isQuestion) {
+                        currentQ += ' ' + line;
+                    } else {
+                        currentA += ' ' + line;
+                    }
+                }
+                
+                if (currentQ && currentA) {
+                    questions.push({
+                        question: currentQ,
+                        answer: currentA,
+                        mark: 'unmarked',
+                        studied: false
+                    });
+                }
+            }
+            // 格式2: 序号格式
+            else if (/^\d+\./.test(lines[0])) {
+                let currentQ = '';
+                let currentA = '';
+                
+                for (let line of lines) {
+                    if (/^\d+\./.test(line)) {
+                        if (currentQ && currentA) {
+                            questions.push({
+                                question: currentQ,
+                                answer: currentA,
+                                mark: 'unmarked',
+                                studied: false
+                            });
+                        }
+                        currentQ = line.replace(/^\d+\./, '').trim();
+                        currentA = '';
+                    } else if (line.startsWith('答案：') || line.startsWith('答：')) {
+                        currentA = line.replace(/^(答案：|答：)/, '').trim();
+                    } else if (currentQ && !currentA) {
+                        currentQ += ' ' + line;
+                    } else if (currentA) {
+                        currentA += ' ' + line;
+                    }
+                }
+                
+                if (currentQ && currentA) {
+                    questions.push({
+                        question: currentQ,
+                        answer: currentA,
+                        mark: 'unmarked',
+                        studied: false
+                    });
+                }
+            }
+            // 格式3: 空行分隔格式
+            else {
+                const allLines = text.split('\n').map(line => line.trim());
+                let i = 0;
+                
+                while (i < allLines.length) {
+                    if (allLines[i]) {
+                        const question = allLines[i];
+                        i++;
+                        
+                        // 跳过空行
+                        while (i < allLines.length && !allLines[i]) {
+                            i++;
+                        }
+                        
+                        if (i < allLines.length && allLines[i]) {
+                            const answer = allLines[i];
+                            questions.push({
+                                question: question,
+                                answer: answer,
+                                mark: 'unmarked',
+                                studied: false
+                            });
+                        }
+                    }
+                    i++;
+                }
+            }
+            
+            return questions;
+        }
+
+        // 导入题目
+        function importQuestions() {
+            const text = document.getElementById('importText').value.trim();
+            if (!text) {
+                alert('请输入题目内容');
+                return;
+            }
+            
+            const newQuestions = parseQuestions(text);
+            if (newQuestions.length === 0) {
+                alert('未能解析出题目，请检查格式');
+                return;
+            }
+            
+            questions = questions.concat(newQuestions);
+            saveQuestions();
+            updateStats();
+            displayQuestionList();
+            hideTextImport();
+            
+            alert(`成功导入 ${newQuestions.length} 道题目`);
+            
+            // 如果是第一次导入，切换到学习模式
+            if (questions.length === newQuestions.length) {
+                switchTab('study');
+                document.querySelector('.tab').click();
+                showQuestion();
+            }
+        }
+
+        // 从文件导入
+        function importFromFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+                const newQuestions = parseQuestions(text);
+                
+                if (newQuestions.length === 0) {
+                    alert('未能从文件中解析出题目，请检查文件格式');
+                    return;
+                }
+                
+                questions = questions.concat(newQuestions);
+                saveQuestions();
+                updateStats();
+                displayQuestionList();
+                
+                alert(`成功从文件导入 ${newQuestions.length} 道题目`);
+                
+                // 如果是第一次导入，切换到学习模式
+                if (questions.length === newQuestions.length) {
+                    switchTab('study');
+                    document.querySelector('.tab').click();
+                    showQuestion();
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // 显示题目列表
+        function displayQuestionList() {
+            const listElement = document.getElementById('questionList');
+            const countElement = document.getElementById('questionCount');
+            
+            countElement.textContent = questions.length;
+            
+            if (questions.length === 0) {
+                listElement.innerHTML = '<div class="no-data">还没有题目</div>';
+                return;
+            }
+            
+            listElement.innerHTML = questions.map((q, index) => {
+                const markClass = q.mark;
+                const markText = {
+                    'unmarked': '',
+                    'uncertain': '不确定',
+                    'important': '重要',
+                    'difficult': '易错'
+                }[q.mark];
+                
+                const markColor = {
+                    'unmarked': 'transparent',
+                    'uncertain': '#fbbf24',
+                    'important': '#ef4444',
+                    'difficult': '#8b5cf6'
+                }[q.mark];
+                
+                return `
+                    <div class="question-item">
+                        ${markText ? `<span class="question-mark" style="background-color: ${markColor}">${markText}</span>` : ''}
+                        <div class="question-text">${q.question}</div>
+                        <div class="answer-text">${q.answer}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 显示当前题目
+        function showQuestion() {
+            const studyContent = document.getElementById('studyContent');
+            
+            if (studyMode === 'normal' && questions.length === 0) {
+                studyContent.innerHTML = '<div class="no-data">📚 还没有题目，请先在"题目管理"中添加题目</div>';
+                return;
+            }
+            
+            if (studyMode === 'review' && reviewQuestions.length === 0) {
+                studyContent.innerHTML = '<div class="no-data">🎯 没有符合筛选条件的题目</div>';
+                return;
+            }
+            
+            const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
+            const currentQ = currentQuestions[currentIndex];
+            
+            if (!currentQ) {
+                studyContent.innerHTML = '<div class="no-data">🎉 所有题目已完成！</div>';
+                return;
+            }
+            
+            const markButtons = `
+                <div class="mark-buttons">
+                    <button class="mark-btn ${currentQ.mark === 'unmarked' ? 'active' : ''} unmarked" onclick="setMark('unmarked')">无标记</button>
+                    <button class="mark-btn ${currentQ.mark === 'uncertain' ? 'active' : ''} uncertain" onclick="setMark('uncertain')">不确定</button>
+                    <button class="mark-btn ${currentQ.mark === 'important' ? 'active' : ''} important" onclick="setMark('important')">重要</button>
+                    <button class="mark-btn ${currentQ.mark === 'difficult' ? 'active' : ''} difficult" onclick="setMark('difficult')">易错</button>
+                </div>
+            `;
+            
+            studyContent.innerHTML = `
+                <div class="study-card">
+                    <div class="question">${currentQ.question}</div>
+                    <div class="answer" id="answerDiv">${currentQ.answer}</div>
+                </div>
+                ${markButtons}
+                <div class="controls">
+                    <button class="btn btn-primary" id="showAnswerBtn" onclick="toggleAnswer()">显示答案</button>
+                    <button class="btn btn-secondary" onclick="nextQuestion()">下一题 (${currentIndex + 1}/${currentQuestions.length})</button>
+                </div>
+            `;
+            
+            showingAnswer = false;
+        }
+
+        // 切换答案显示
+        function toggleAnswer() {
+            const answerDiv = document.getElementById('answerDiv');
+            const showAnswerBtn = document.getElementById('showAnswerBtn');
+            
+            if (showingAnswer) {
+                answerDiv.classList.remove('show');
+                showAnswerBtn.textContent = '显示答案';
+                showingAnswer = false;
+            } else {
+                answerDiv.classList.add('show');
+                showAnswerBtn.textContent = '隐藏答案';
+                showingAnswer = true;
+                
+                // 标记为已学习
+                const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
+                const currentQ = currentQuestions[currentIndex];
+                if (!currentQ.studied) {
+                    currentQ.studied = true;
+                    saveQuestions();
+                    updateStats();
+                }
+            }
+        }
+
+        // 下一题
+        function nextQuestion() {
+            const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
+            
+            if (currentIndex < currentQuestions.length - 1) {
+                currentIndex++;
+            } else {
+                currentIndex = 0; // 循环到第一题
+            }
+            
+            showQuestion();
+        }
+
+        // 设置题目标记
+        function setMark(mark) {
+            const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
+            const currentQ = currentQuestions[currentIndex];
+            
+            currentQ.mark = mark;
+            saveQuestions();
+            updateStats();
+            
+            // 更新标记按钮状态
+            document.querySelectorAll('.mark-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`.mark-btn.${mark}`).classList.add('active');
+        }
+
+        // 复习模式 - 切换筛选器
+        function toggleFilter(filter) {
+            const btn = event.target;
+            
+            if (reviewFilters.includes(filter)) {
+                reviewFilters = reviewFilters.filter(f => f !== filter);
+                btn.style.opacity = '0.5';
+            } else {
+                reviewFilters.push(filter);
+                btn.style.opacity = '1';
+            }
+        }
+
+        // 开始复习
+        function startReview() {
+            if (reviewFilters.length === 0) {
+                alert('请先选择要复习的标记类型');
+                return;
+            }
+            
+            reviewQuestions = questions.filter(q => reviewFilters.includes(q.mark));
+            
+            if (reviewQuestions.length === 0) {
+                document.getElementById('reviewContent').innerHTML = '<div class="no-data">🎯 没有符合筛选条件的题目</div>';
+                return;
+            }
+            
+            studyMode = 'review';
+            currentIndex = 0;
+            
+            // 切换到学习界面显示复习内容
+            switchTab('study');
+            document.querySelector('.tab').click();
+            showQuestion();
+        }
+
+        // 清空所有题目
+        function clearAllQuestions() {
+            if (confirm('确定要清空所有题目吗？此操作不可恢复。')) {
+                questions = [];
+                currentIndex = 0;
+                studyMode = 'normal';
+                saveQuestions();
+                updateStats();
+                displayQuestionList();
+                showQuestion();
+            }
+        }
+
+        // 更新统计信息
+        function updateStats() {
+            const total = questions.length;
+            const studied = questions.filter(q => q.studied).length;
+            const marked = questions.filter(q => q.mark !== 'unmarked').length;
+            const progress = total > 0 ? Math.round((studied / total) * 100) : 0;
+            
+            document.getElementById('totalCount').textContent = total;
+            document.getElementById('studiedCount').textContent = studied;
+            document.getElementById('markedCount').textContent = marked;
+            document.getElementById('progressPercent').textContent = progress + '%';
+            document.getElementById('progressBar').style.width = progress + '%';
+        }
+
+        // 保存题目到本地存储
+        function saveQuestions() {
+            localStorage.setItem('flashcardQuestions', JSON.stringify(questions));
+        }
+
+        // 从本地存储加载题目
+        function loadQuestions() {
+            const saved = localStorage.getItem('flashcardQuestions');
+            if (saved) {
+                questions = JSON.parse(saved);
+            }
+        }
+
+        // 键盘快捷键
+        document.addEventListener('keydown', function(e) {
+            if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
+                return; // 在输入框中不响应快捷键
+            }
+            
+            switch(e.key) {
+                case ' ': // 空格键显示/隐藏答案
+                    e.preventDefault();
+                    if (document.getElementById('showAnswerBtn')) {
+                        toggleAnswer();
+                    }
+                    break;
+                case 'ArrowRight': // 右箭头下一题
+                case 'Enter': // 回车键下一题
+                    e.preventDefault();
+                    nextQuestion();
+                    break;
+                case '1': // 数字键快速标记
+                    setMark('unmarked');
+                    break;
+                case '2':
+                    setMark('uncertain');
+                    break;
+                case '3':
+                    setMark('important');
+                    break;
+                case '4':
+                    setMark('difficult');
+                    break;
+            }
+        });
+    </script>
+</body>
+</html>
