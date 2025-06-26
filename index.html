@@ -513,8 +513,23 @@
             }
             
             .stats {
-                flex-direction: column;
-                gap: 8px;
+                flex-direction: row;
+                flex-wrap: wrap;
+                gap: 5px;
+                padding: 8px;
+            }
+            
+            .stat-item {
+                flex: 1;
+                min-width: calc(50% - 2.5px);
+            }
+            
+            .stat-number {
+                font-size: 1rem;
+            }
+            
+            .stat-item div:last-child {
+                font-size: 0.7rem;
             }
             
             .controls {
@@ -526,8 +541,21 @@
             }
             
             .user-info {
-                flex-direction: column;
-                gap: 8px;
+                flex-direction: row;
+                justify-content: space-between;
+                gap: 5px;
+                padding: 5px 8px;
+                margin-bottom: 8px;
+            }
+            
+            .user-email {
+                font-size: 0.7rem;
+                flex: 1;
+                text-align: left;
+            }
+            
+            .sync-status {
+                font-size: 0.6rem;
             }
             
             .study-card {
