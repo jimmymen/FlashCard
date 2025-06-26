@@ -708,14 +708,14 @@ A: 这是第二道题的答案
 
         // ⚠️ 重要：这里需要替换为你的 Firebase 配置
         const firebaseConfig = {
-  apiKey: "AIzaSyDCKbNBGKJKNhfVH3_yNIUdUJDZJrOlhdU",
-  authDomain: "flashcard-f9207.firebaseapp.com",
-  databaseURL: "https://flashcard-f9207-default-rtdb.firebaseio.com",
-  projectId: "flashcard-f9207",
-  storageBucket: "flashcard-f9207.firebasestorage.app",
-  messagingSenderId: "434986412944",
-  appId: "1:434986412944:web:b2b2217ecedd81eabe2115",
-  measurementId: "G-616727LSE4"
+            apiKey: "AIzaSyDCKbNBGKJKNhfVH3_yNIUdUJDZJrOlhdU",
+            authDomain: "flashcard-f9207.firebaseapp.com",
+            databaseURL: "https://flashcard-f9207-default-rtdb.firebaseio.com",
+            projectId: "flashcard-f9207",
+            storageBucket: "flashcard-f9207.firebasestorage.app",
+            messagingSenderId: "434986412944",
+            appId: "1:434986412944:web:b2b2217ecedd81eabe2115",
+            measurementId: "G-616727LSE4"
         };
 
         // 初始化 Firebase
@@ -877,9 +877,13 @@ A: 这是第二道题的答案
                     
                     // 更新全局变量
                     window.questions = questions;
+                    window.currentIndex = currentIndex;
+                    window.studyMode = studyMode;
                     
                     updateStats();
                     displayQuestionList();
+                    
+                    // 强制刷新学习页面
                     if (questions.length > 0) {
                         showQuestion();
                     }
@@ -895,14 +899,22 @@ A: 这是第二道题的答案
                         reviewFilters = progress.reviewFilters || [];
                         showingAnswer = progress.showingAnswer || false;
                         
+                        // 更新全局变量
+                        window.currentIndex = currentIndex;
+                        window.studyMode = studyMode;
+                        window.reviewFilters = reviewFilters;
+                        window.showingAnswer = showingAnswer;
+                        
                         if (studyMode === 'review' && reviewFilters.length > 0) {
                             reviewQuestions = questions.filter(q => reviewFilters.includes(q.mark));
+                            window.reviewQuestions = reviewQuestions;
                         }
                         
                         // 确保索引不越界
                         const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
                         if (currentIndex >= currentQuestions.length) {
                             currentIndex = 0;
+                            window.currentIndex = 0;
                         }
                         
                         showQuestion();
@@ -1007,6 +1019,9 @@ A: 这是第二道题的答案
             
             if (tab === 'manage') {
                 displayQuestionList();
+            } else if (tab === 'study') {
+                // 强制刷新学习页面
+                showQuestion();
             }
         }
 
@@ -1207,14 +1222,17 @@ A: 这是第二道题的答案
             const listElement = document.getElementById('questionList');
             const countElement = document.getElementById('questionCount');
             
-            countElement.textContent = questions.length;
+            // 使用全局变量
+            const currentQuestions = window.questions || [];
             
-            if (questions.length === 0) {
+            countElement.textContent = currentQuestions.length;
+            
+            if (currentQuestions.length === 0) {
                 listElement.innerHTML = '<div class="no-data">还没有题目</div>';
                 return;
             }
             
-            listElement.innerHTML = questions.map((q, index) => {
+            listElement.innerHTML = currentQuestions.map((q, index) => {
                 const markText = {
                     'unmarked': '',
                     'uncertain': '不确定',
@@ -1435,9 +1453,12 @@ A: 这是第二道题的答案
 
         // 更新统计信息
         function updateStats() {
-            const total = questions.length;
-            const studied = questions.filter(q => q.studied).length;
-            const marked = questions.filter(q => q.mark !== 'unmarked').length;
+            // 使用全局变量
+            const currentQuestions = window.questions || [];
+            
+            const total = currentQuestions.length;
+            const studied = currentQuestions.filter(q => q.studied).length;
+            const marked = currentQuestions.filter(q => q.mark !== 'unmarked').length;
             const progress = total > 0 ? Math.round((studied / total) * 100) : 0;
             
             document.getElementById('totalCount').textContent = total;
