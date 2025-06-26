@@ -144,10 +144,13 @@
         
         .tab-content {
             display: none;
+            flex: 1;
+            overflow-y: auto;
         }
         
         .tab-content.active {
-            display: block;
+            display: flex !important;
+            flex-direction: column;
         }
         
         /* 登录界面样式 */
@@ -245,37 +248,46 @@
             z-index: 1;
         }
         
+        /* 学习模式布局 */
+        #studyContent {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        
         /* 学习模式样式 */
         .study-card {
             background: #f8f9fa;
             border-radius: 15px;
-            padding: 50px 40px;
-            margin-bottom: 20px;
-            min-height: 400px;
+            padding: 30px 25px;
+            margin-bottom: 15px;
+            flex: 1;
             display: flex;
             flex-direction: column;
             justify-content: center;
+            min-height: 0;
         }
         
         .question {
-            font-size: 1.5rem;
-            line-height: 1.6;
-            margin-bottom: 30px;
+            font-size: 1.4rem;
+            line-height: 1.5;
+            margin-bottom: 20px;
             color: #333;
             text-align: center;
             font-weight: 500;
         }
         
         .answer {
-            font-size: 1.4rem;
-            line-height: 1.6;
+            font-size: 1.3rem;
+            line-height: 1.5;
             color: #2d3748;
             background: #e6fffa;
-            padding: 30px;
+            padding: 20px;
             border-radius: 10px;
             border-left: 4px solid #38b2ac;
             display: none;
             text-align: center;
+            margin-top: auto;
         }
         
         .answer.show {
@@ -292,15 +304,16 @@
             display: flex;
             gap: 15px;
             justify-content: center;
-            margin-top: 20px;
+            margin-top: 15px;
+            flex-shrink: 0;
         }
         
         .btn {
-            padding: 14px 28px;
+            padding: 12px 24px;
             border: none;
             border-radius: 25px;
             cursor: pointer;
-            font-size: 1.1rem;
+            font-size: 1rem;
             transition: all 0.3s;
             font-weight: 500;
         }
@@ -329,9 +342,11 @@
         /* 标记按钮 */
         .mark-buttons {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             justify-content: center;
-            margin-top: 15px;
+            margin-top: 10px;
+            flex-shrink: 0;
+            flex-wrap: wrap;
         }
         
         .mark-btn {
@@ -666,7 +681,7 @@
                 
                 <!-- 学习模式 -->
                 <div id="studyTab" class="tab-content active">
-                    <div id="studyContent">
+                    <div id="studyContent" style="display: flex; flex-direction: column; flex: 1;">
                         <div class="no-data">
                             <p>📚 还没有题目，请先在"题目管理"中添加题目</p>
                         </div>
@@ -1349,21 +1364,17 @@ A: 这是第二道题的答案
                 return;
             }
             
-            const markButtons = `
+            studyContent.innerHTML = `
+                <div class="study-card">
+                    <div class="question">${currentQ.question}</div>
+                    <div class="answer ${window.showingAnswer ? 'show' : ''}" id="answerDiv">${currentQ.answer}</div>
+                </div>
                 <div class="mark-buttons">
                     <button class="mark-btn ${currentQ.mark === 'unmarked' ? 'active' : ''} unmarked" onclick="setMark('unmarked')">无标记</button>
                     <button class="mark-btn ${currentQ.mark === 'uncertain' ? 'active' : ''} uncertain" onclick="setMark('uncertain')">不确定</button>
                     <button class="mark-btn ${currentQ.mark === 'important' ? 'active' : ''} important" onclick="setMark('important')">重要</button>
                     <button class="mark-btn ${currentQ.mark === 'difficult' ? 'active' : ''} difficult" onclick="setMark('difficult')">易错</button>
                 </div>
-            `;
-            
-            studyContent.innerHTML = `
-                <div class="study-card">
-                    <div class="question">${currentQ.question}</div>
-                    <div class="answer ${window.showingAnswer ? 'show' : ''}" id="answerDiv">${currentQ.answer}</div>
-                </div>
-                ${markButtons}
                 <div class="controls">
                     <button class="btn btn-primary" id="showAnswerBtn" onclick="toggleAnswer()">${window.showingAnswer ? '隐藏答案' : '显示答案'}</button>
                     <button class="btn btn-secondary" onclick="nextQuestion()">下一题 (${window.currentIndex + 1}/${currentQuestions.length})</button>
