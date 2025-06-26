@@ -1,4 +1,48 @@
-<!DOCTYPE html>
+/* 页面底部统计信息 */
+        .bottom-stats {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 15px 20px;
+            margin-top: 30px;
+        }
+        
+        .bottom-stats .stats {
+            display: flex;
+            justify-content: space-around;
+            background: rgba(255,255,255,0.1);
+            padding: 10px;
+            border-radius: 8px;
+        }
+        
+        .bottom-stats .stat-item {
+            text-align: center;
+        }
+        
+        .bottom-stats .stat-number {
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+        
+        .bottom-stats .stat-item div:last-child {
+            font-size: 0.8rem;
+            margin-top: 3px;
+        }
+        
+        .bottom-stats .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: rgba(255,255,255,0.3);
+            border-radius: 2px;
+            margin-top: 12px;
+            overflow: hidden;
+        }
+        
+        .bottom-stats .progress-fill {
+            height: 100%;
+            background: white;
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -26,9 +70,7 @@
             border-radius: 20px;
             box-shadow: 0 20px 40px rgba(0,0,0,0.1);
             overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            height: calc(100vh - 40px);
+            min-height: calc(100vh - 40px);
         }
         
         .header {
@@ -110,10 +152,6 @@
         
         .content {
             padding: 20px;
-            flex: 1;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
         }
         
         .nav-tabs {
@@ -144,13 +182,10 @@
         
         .tab-content {
             display: none;
-            flex: 1;
-            overflow-y: auto;
         }
         
         .tab-content.active {
-            display: flex !important;
-            flex-direction: column;
+            display: block;
         }
         
         /* 登录界面样式 */
@@ -250,9 +285,7 @@
         
         /* 学习模式布局 */
         #studyContent {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
+            display: block;
         }
         
         /* 控制按钮放在顶部 */
@@ -261,7 +294,6 @@
             gap: 10px;
             justify-content: center;
             margin-bottom: 15px;
-            flex-shrink: 0;
         }
         
         .study-controls .btn {
@@ -275,35 +307,33 @@
         .study-card {
             background: #f8f9fa;
             border-radius: 15px;
-            padding: 25px 20px;
-            flex: 1;
+            padding: 40px 30px;
+            margin-bottom: 15px;
+            min-height: 400px;
             display: flex;
             flex-direction: column;
             justify-content: center;
-            min-height: 0;
-            margin-bottom: 10px;
         }
         
         .question {
-            font-size: 1.3rem;
+            font-size: 1.4rem;
             line-height: 1.5;
-            margin-bottom: 20px;
+            margin-bottom: 25px;
             color: #333;
             text-align: center;
             font-weight: 500;
         }
         
         .answer {
-            font-size: 1.2rem;
+            font-size: 1.3rem;
             line-height: 1.5;
             color: #2d3748;
             background: #e6fffa;
-            padding: 20px;
+            padding: 25px;
             border-radius: 10px;
             border-left: 4px solid #38b2ac;
             display: none;
             text-align: center;
-            margin-top: auto;
         }
         
         .answer.show {
@@ -355,13 +385,12 @@
             transform: none;
         }
         
-        /* 标记按钮移到底部 */
+        /* 标记按钮移到题目下方 */
         .mark-buttons {
             display: flex;
-            gap: 6px;
+            gap: 8px;
             justify-content: center;
-            margin-top: 10px;
-            flex-shrink: 0;
+            margin: 15px 0;
             flex-wrap: wrap;
         }
         
@@ -983,11 +1012,13 @@ A: 这是第二道题的答案
                 // 监听学习进度
                 const progressRef = doc(db, 'users', currentUser.uid, 'settings', 'progress');
                 unsubscribeProgress = onSnapshot(progressRef, (doc) => {
-                    if (doc.exists()) {
+                    if (doc.exists() && !window.localOperation && !window.isToggling && !window.isNavigating) {
                         const progress = doc.data();
+                        const remoteTimestamp = progress.timestamp || 0;
+                        const localTimestamp = window.lastLocalTimestamp || 0;
                         
-                        // 只在没有本地操作时更新
-                        if (!window.localOperation) {
+                        // 只在远程时间戳更新时才同步
+                        if (remoteTimestamp > localTimestamp) {
                             currentIndex = progress.currentIndex || 0;
                             studyMode = progress.studyMode || 'normal';
                             reviewFilters = progress.reviewFilters || [];
@@ -998,6 +1029,7 @@ A: 这是第二道题的答案
                             window.studyMode = studyMode;
                             window.reviewFilters = reviewFilters;
                             window.showingAnswer = showingAnswer;
+                            window.lastLocalTimestamp = remoteTimestamp;
                             
                             if (studyMode === 'review' && reviewFilters.length > 0) {
                                 reviewQuestions = questions.filter(q => reviewFilters.includes(q.mark));
@@ -1055,13 +1087,14 @@ A: 这是第二道题的答案
                     studyMode: window.studyMode,
                     reviewFilters: window.reviewFilters,
                     showingAnswer: window.showingAnswer,
-                    updatedAt: new Date()
+                    updatedAt: new Date(),
+                    timestamp: Date.now() // 添加时间戳用于冲突检测
                 });
                 
                 // 延迟清除标记
                 setTimeout(() => {
                     window.localOperation = false;
-                }, 1000);
+                }, 1500);
             } catch (error) {
                 console.error('保存进度失败:', error);
                 setSyncStatus('error', '保存失败');
@@ -1097,13 +1130,18 @@ A: 这是第二道题的答案
         window.saveProgressToCloud = saveProgressToCloud;
         window.deleteAllQuestions = deleteAllQuestions;
         
-        // 暴露全局变量
+        // 暴露全局变量和状态
         window.questions = questions;
         window.currentUser = currentUser;
         window.currentIndex = currentIndex;
         window.studyMode = studyMode;
         window.reviewFilters = reviewFilters;
         window.reviewQuestions = reviewQuestions;
+        window.showingAnswer = showingAnswer;
+        window.localOperation = false;
+        window.isToggling = false;
+        window.isNavigating = false;
+        window.lastLocalTimestamp = 0;
         
         // 页面加载完成
         window.addEventListener('load', () => {
