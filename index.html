@@ -563,9 +563,9 @@
 
         <div class="content">
             <nav class="nav-tabs">
-                <button class="tab active" onclick="switchTab('study')">学习模式</button>
-                <button class="tab" onclick="switchTab('manage')">题目管理</button>
-                <button class="tab" onclick="switchTab('review')">复习模式</button>
+                <button class="tab active" onclick="window.switchTab('study')">学习模式</button>
+                <button class="tab" onclick="window.switchTab('manage')">题目管理</button>
+                <button class="tab" onclick="window.switchTab('review')">复习模式</button>
             </nav>
 
             <div class="tab-content">
@@ -579,10 +579,10 @@
 
                 <div id="manageTab" class="tab-content">
                     <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
-                        <button class="btn btn-primary" onclick="showTextImport()">📝 文本导入</button>
-                        <button class="btn btn-secondary" onclick="showFileImport()">📁 文件导入</button>
-                        <button class="btn btn-secondary" onclick="deleteAllQuestions()" style="background: #ef4444; color: white;">🗑️ 清空题目</button>
-                        <button class="btn btn-secondary" onclick="logout()">🚪 退出登录</button>
+                        <button class="btn btn-primary" onclick="window.showTextImport()">📝 文本导入</button>
+                        <button class="btn btn-secondary" onclick="window.showFileImport()">📁 文件导入</button>
+                        <button class="btn btn-secondary" onclick="window.deleteAllQuestions()" style="background: #ef4444; color: white;">🗑️ 清空题目</button>
+                        <button class="btn btn-secondary" onclick="window.logout()">🚪 退出登录</button>
                     </div>
                     
                     <div id="textImportSection" class="import-section" style="display: none;">
@@ -595,8 +595,8 @@
                         </p>
                         <textarea id="importText" class="import-textarea" placeholder="请输入题目，例如：&#10;Q: 什么是机器学习？&#10;A: 机器学习是人工智能的一个分支...&#10;&#10;Q: 什么是深度学习？&#10;A: 深度学习是机器学习的一个子集..."></textarea>
                         <div style="margin-top: 15px; display: flex; gap: 10px;">
-                            <button class="btn btn-primary" onclick="importQuestions()">导入题目</button>
-                            <button class="btn btn-secondary" onclick="hideTextImport()">取消</button>
+                            <button class="btn btn-primary" onclick="window.importQuestions()">导入题目</button>
+                            <button class="btn btn-secondary" onclick="window.hideTextImport()">取消</button>
                         </div>
                     </div>
                     
@@ -607,8 +607,8 @@
                         </p>
                         <input type="file" id="fileInput" accept=".txt" style="margin-bottom: 15px;">
                         <div style="display: flex; gap: 10px;">
-                            <button class="btn btn-primary" onclick="importFile()">导入文件</button>
-                            <button class="btn btn-secondary" onclick="hideFileImport()">取消</button>
+                            <button class="btn btn-primary" onclick="window.importFile()">导入文件</button>
+                            <button class="btn btn-secondary" onclick="window.hideFileImport()">取消</button>
                         </div>
                     </div>
                     
@@ -624,10 +624,10 @@
                     <div style="margin-bottom: 20px;">
                         <h3>🎯 复习筛选</h3>
                         <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
-                            <button class="btn" id="filterUncertain" onclick="toggleFilter('uncertain')" style="background: #fbbf24; color: white;">不确定</button>
-                            <button class="btn" id="filterImportant" onclick="toggleFilter('important')" style="background: #ef4444; color: white;">重要</button>
-                            <button class="btn" id="filterDifficult" onclick="toggleFilter('difficult')" style="background: #8b5cf6; color: white;">易错</button>
-                            <button class="btn btn-secondary" onclick="startReview()">开始复习</button>
+                            <button class="btn" id="filterUncertain" onclick="window.toggleFilter('uncertain')" style="background: #fbbf24; color: white;">不确定</button>
+                            <button class="btn" id="filterImportant" onclick="window.toggleFilter('important')" style="background: #ef4444; color: white;">重要</button>
+                            <button class="btn" id="filterDifficult" onclick="window.toggleFilter('difficult')" style="background: #8b5cf6; color: white;">易错</button>
+                            <button class="btn btn-secondary" onclick="window.startReview()">开始复习</button>
                         </div>
                     </div>
                     
@@ -1177,22 +1177,28 @@
             }
             
             try {
+                console.log('开始导入题目，数量:', newQuestions.length);
+                
+                // 确保questions数组已初始化
                 if (!window.questions) {
                     window.questions = [];
                 }
                 
+                // 保存到云端
                 for (let i = 0; i < newQuestions.length; i++) {
                     newQuestions[i].order = window.questions.length + i;
                     await window.saveQuestionToCloud(newQuestions[i], window.questions.length + i);
                 }
                 
+                // 清空输入框并隐藏导入区域
+                document.getElementById('importText').value = '';
                 hideTextImport();
                 alert(`成功导入 ${newQuestions.length} 道题目`);
                 
+                // 如果是第一次导入，切换到学习模式
                 if (window.questions.length === 0) {
                     setTimeout(() => {
-                        switchTab('study');
-                        document.querySelector('.tab').click();
+                        document.querySelector('.tab[onclick*="study"]').click();
                     }, 1000);
                 }
                 
