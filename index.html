@@ -1415,59 +1415,83 @@ A: 这是第二道题的答案
             
             if (!answerDiv || !showAnswerBtn) return;
             
-            // 使用全局变量
-            if (window.showingAnswer) {
-                answerDiv.classList.remove('show');
-                showAnswerBtn.textContent = '显示答案';
-                window.showingAnswer = false;
-            } else {
-                answerDiv.classList.add('show');
-                showAnswerBtn.textContent = '隐藏答案';
-                window.showingAnswer = true;
-                
-                // 标记为已学习
-                const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
-                if (currentQuestions && currentQuestions[window.currentIndex]) {
-                    const currentQ = currentQuestions[window.currentIndex];
-                    if (!currentQ.studied) {
-                        currentQ.studied = true;
-                        await window.saveQuestionToCloud(currentQ, currentQ.order);
-                        updateStats();
+            // 防止重复点击
+            if (window.isToggling) return;
+            window.isToggling = true;
+            
+            try {
+                // 使用全局变量
+                if (window.showingAnswer) {
+                    answerDiv.classList.remove('show');
+                    showAnswerBtn.textContent = '显示答案';
+                    window.showingAnswer = false;
+                } else {
+                    answerDiv.classList.add('show');
+                    showAnswerBtn.textContent = '隐藏答案';
+                    window.showingAnswer = true;
+                    
+                    // 标记为已学习
+                    const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
+                    if (currentQuestions && currentQuestions[window.currentIndex]) {
+                        const currentQ = currentQuestions[window.currentIndex];
+                        if (!currentQ.studied) {
+                            currentQ.studied = true;
+                            await window.saveQuestionToCloud(currentQ, currentQ.order);
+                            updateStats();
+                        }
                     }
                 }
-            }
-            
-            // 保存进度但不刷新界面
-            if (window.saveProgressToCloud) {
-                await window.saveProgressToCloud();
+                
+                // 保存进度但不触发界面更新
+                if (window.saveProgressToCloud) {
+                    await window.saveProgressToCloud();
+                }
+                
+            } finally {
+                // 延迟释放锁
+                setTimeout(() => {
+                    window.isToggling = false;
+                }, 500);
             }
         }
 
         // 下一题
         async function nextQuestion() {
-            // 使用全局变量
-            const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
+            // 防止重复点击
+            if (window.isNavigating) return;
+            window.isNavigating = true;
             
-            if (!currentQuestions || currentQuestions.length === 0) {
-                console.log('没有题目可供学习');
-                return;
+            try {
+                // 使用全局变量
+                const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
+                
+                if (!currentQuestions || currentQuestions.length === 0) {
+                    console.log('没有题目可供学习');
+                    return;
+                }
+                
+                if (window.currentIndex < currentQuestions.length - 1) {
+                    window.currentIndex++;
+                } else {
+                    window.currentIndex = 0;
+                }
+                
+                window.showingAnswer = false;
+                
+                // 保存进度
+                if (window.saveProgressToCloud) {
+                    await window.saveProgressToCloud();
+                }
+                
+                // 刷新显示
+                showQuestion();
+                
+            } finally {
+                // 延迟释放锁
+                setTimeout(() => {
+                    window.isNavigating = false;
+                }, 300);
             }
-            
-            if (window.currentIndex < currentQuestions.length - 1) {
-                window.currentIndex++;
-            } else {
-                window.currentIndex = 0;
-            }
-            
-            window.showingAnswer = false;
-            
-            // 保存进度
-            if (window.saveProgressToCloud) {
-                await window.saveProgressToCloud();
-            }
-            
-            // 刷新显示
-            showQuestion();
         }
 
         // 设置题目标记
