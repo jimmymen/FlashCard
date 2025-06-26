@@ -827,9 +827,10 @@ A: 这是第二道题的答案
         let unsubscribeProgress = null;
         
         // 操作锁和状态管理
-        let isOperationInProgress = false;
+        let isLocalOperation = false;
         let lastSyncTimestamp = 0;
-        let operationQueue = [];
+        let lastLocalOperationTime = 0;
+        let deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 
         // 将 Firebase 相关函数暴露到全局
         window.firebaseAuth = {
@@ -970,10 +971,12 @@ A: 这是第二道题的答案
 
         // 安全的进度保存函数
         const debouncedSaveProgress = debounce(async () => {
-            if (!currentUser || isOperationInProgress) return;
+            if (!currentUser) return;
             
             try {
-                isOperationInProgress = true;
+                isLocalOperation = true;
+                lastLocalOperationTime = Date.now();
+                
                 const progressRef = doc(db, 'users', currentUser.uid, 'settings', 'progress');
                 const timestamp = Date.now();
                 
@@ -983,18 +986,24 @@ A: 这是第二道题的答案
                     reviewFilters: reviewFilters,
                     showingAnswer: showingAnswer,
                     updatedAt: new Date(),
-                    timestamp: timestamp
+                    timestamp: timestamp,
+                    deviceId: deviceId
                 });
                 
                 lastSyncTimestamp = timestamp;
                 setSyncStatus('synced', '已同步');
+                
+                // 短暂延迟后清除本地操作标记
+                setTimeout(() => {
+                    isLocalOperation = false;
+                }, 500);
+                
             } catch (error) {
                 console.error('保存进度失败:', error);
                 setSyncStatus('error', '保存失败');
-            } finally {
-                isOperationInProgress = false;
+                isLocalOperation = false;
             }
-        }, 1000);
+        }, 800);
 
         // 加载用户数据
         async function loadUserData() {
@@ -1020,21 +1029,44 @@ A: 这是第二道题的答案
                     updateStats();
                     displayQuestionList();
                     
-                    // 只在非操作期间刷新学习页面
-                    if (!isOperationInProgress && questions.length > 0) {
+                    // 只在非本地操作期间刷新学习页面
+                    if (!isLocalOperation && questions.length > 0) {
                         showQuestion();
                     }
                 });
                 
-                // 监听学习进度 - 添加更严格的冲突检测
+                // 监听学习进度 - 优化多设备同步
                 const progressRef = doc(db, 'users', currentUser.uid, 'settings', 'progress');
                 unsubscribeProgress = onSnapshot(progressRef, (doc) => {
-                    if (doc.exists() && !isOperationInProgress) {
+                    if (doc.exists()) {
                         const progress = doc.data();
                         const remoteTimestamp = progress.timestamp || 0;
+                        const remoteDeviceId = progress.deviceId || '';
+                        const timeSinceLastLocal = Date.now() - lastLocalOperationTime;
                         
-                        // 只在远程时间戳明显更新且不在本地操作期间才同步
-                        if (remoteTimestamp > lastSyncTimestamp + 2000) {
+                        // 智能同步逻辑：
+                        // 1. 如果是来自其他设备的更新，立即同步
+                        // 2. 如果是本设备的更新但时间戳更新，也要同步（处理网络延迟）
+                        // 3. 如果刚刚进行了本地操作，则短暂延迟同步避免冲突
+                        const shouldSync = (
+                            // 来自其他设备的更新
+                            (remoteDeviceId !== deviceId && remoteTimestamp > lastSyncTimestamp) ||
+                            // 本设备的更新但有新时间戳，且不在本地操作冷却期
+                            (remoteTimestamp > lastSyncTimestamp + 1000 && timeSinceLastLocal > 1000)
+                        );
+                        
+                        if (shouldSync) {
+                            console.log('同步进度:', {
+                                remoteDeviceId,
+                                currentDeviceId: deviceId,
+                                remoteTimestamp,
+                                lastSyncTimestamp,
+                                timeSinceLastLocal
+                            });
+                            
+                            const oldIndex = currentIndex;
+                            const oldShowingAnswer = showingAnswer;
+                            
                             currentIndex = progress.currentIndex || 0;
                             studyMode = progress.studyMode || 'normal';
                             reviewFilters = progress.reviewFilters || [];
@@ -1059,12 +1091,11 @@ A: 这是第二道题的答案
                                 window.currentIndex = 0;
                             }
                             
-                            // 延迟刷新显示，避免与本地操作冲突
-                            setTimeout(() => {
-                                if (!isOperationInProgress) {
-                                    showQuestion();
-                                }
-                            }, 300);
+                            // 只有在显著变化时才刷新界面
+                            if (oldIndex !== currentIndex || oldShowingAnswer !== showingAnswer) {
+                                console.log('刷新界面:', { oldIndex, newIndex: currentIndex, oldShowingAnswer, newShowingAnswer: showingAnswer });
+                                showQuestion();
+                            }
                         }
                     }
                 });
@@ -1434,91 +1465,102 @@ A: 这是第二道题的答案
             `;
         }
 
-        // 切换答案显示 - 修复版本
+        // 切换答案显示 - 优化版本
         async function toggleAnswer() {
             const answerDiv = document.getElementById('answerDiv');
             const showAnswerBtn = document.getElementById('showAnswerBtn');
             
             if (!answerDiv || !showAnswerBtn) return;
             
-            // 使用防抖来避免快速点击导致的问题
-            if (window.toggleAnswerTimeout) {
-                clearTimeout(window.toggleAnswerTimeout);
-            }
+            // 防止重复快速点击
+            if (window.toggleAnswerInProgress) return;
+            window.toggleAnswerInProgress = true;
             
-            window.toggleAnswerTimeout = setTimeout(async () => {
-                try {
-                    // 立即更新UI状态
-                    if (window.showingAnswer) {
-                        answerDiv.classList.remove('show');
-                        showAnswerBtn.textContent = '显示答案';
-                        window.showingAnswer = false;
-                    } else {
-                        answerDiv.classList.add('show');
-                        showAnswerBtn.textContent = '隐藏答案';
-                        window.showingAnswer = true;
-                        
-                        // 标记为已学习
-                        const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
-                        if (currentQuestions && currentQuestions[window.currentIndex]) {
-                            const currentQ = currentQuestions[window.currentIndex];
-                            if (!currentQ.studied) {
-                                currentQ.studied = true;
-                                await window.saveQuestionToCloud(currentQ, currentQ.order);
-                                updateStats();
-                            }
+            try {
+                // 立即更新UI状态
+                if (window.showingAnswer) {
+                    answerDiv.classList.remove('show');
+                    showAnswerBtn.textContent = '显示答案';
+                    window.showingAnswer = false;
+                } else {
+                    answerDiv.classList.add('show');
+                    showAnswerBtn.textContent = '隐藏答案';
+                    window.showingAnswer = true;
+                    
+                    // 标记为已学习
+                    const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
+                    if (currentQuestions && currentQuestions[window.currentIndex]) {
+                        const currentQ = currentQuestions[window.currentIndex];
+                        if (!currentQ.studied) {
+                            currentQ.studied = true;
+                            await window.saveQuestionToCloud(currentQ, currentQ.order);
+                            updateStats();
                         }
                     }
-                    
-                    // 使用防抖的进度保存
-                    if (window.debouncedSaveProgress) {
-                        window.debouncedSaveProgress();
-                    }
-                    
-                } catch (error) {
-                    console.error('切换答案失败:', error);
                 }
-            }, 200);
+                
+                // 同步全局变量
+                showingAnswer = window.showingAnswer;
+                
+                // 使用防抖的进度保存
+                if (window.debouncedSaveProgress) {
+                    window.debouncedSaveProgress();
+                }
+                
+            } catch (error) {
+                console.error('切换答案失败:', error);
+            } finally {
+                // 短暂延迟后释放锁
+                setTimeout(() => {
+                    window.toggleAnswerInProgress = false;
+                }, 300);
+            }
         }
 
-        // 下一题 - 修复版本
+        // 下一题 - 优化版本
         async function nextQuestion() {
-            // 使用防抖来避免快速点击
-            if (window.nextQuestionTimeout) {
-                clearTimeout(window.nextQuestionTimeout);
-            }
+            // 防止重复快速点击
+            if (window.nextQuestionInProgress) return;
+            window.nextQuestionInProgress = true;
             
-            window.nextQuestionTimeout = setTimeout(async () => {
-                try {
-                    // 使用全局变量
-                    const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
-                    
-                    if (!currentQuestions || currentQuestions.length === 0) {
-                        console.log('没有题目可供学习');
-                        return;
-                    }
-                    
-                    // 立即更新索引和状态
-                    if (window.currentIndex < currentQuestions.length - 1) {
-                        window.currentIndex++;
-                    } else {
-                        window.currentIndex = 0;
-                    }
-                    
-                    window.showingAnswer = false;
-                    
-                    // 立即刷新显示
-                    showQuestion();
-                    
-                    // 使用防抖的进度保存
-                    if (window.debouncedSaveProgress) {
-                        window.debouncedSaveProgress();
-                    }
-                    
-                } catch (error) {
-                    console.error('下一题失败:', error);
+            try {
+                // 使用全局变量
+                const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
+                
+                if (!currentQuestions || currentQuestions.length === 0) {
+                    console.log('没有题目可供学习');
+                    return;
                 }
-            }, 200);
+                
+                // 立即更新索引和状态
+                if (window.currentIndex < currentQuestions.length - 1) {
+                    window.currentIndex++;
+                } else {
+                    window.currentIndex = 0;
+                }
+                
+                window.showingAnswer = false;
+                
+                // 同步全局变量
+                currentIndex = window.currentIndex;
+                showingAnswer = window.showingAnswer;
+                
+                // 立即刷新显示
+                showQuestion();
+                
+                // 使用防抖的进度保存
+                if (window.debouncedSaveProgress) {
+                    window.debouncedSaveProgress();
+                }
+                
+            } catch (error) {
+                console.error('下一题失败:', error);
+            } finally {
+                // 短暂延迟后释放锁
+                setTimeout(() => {
+                    window.nextQuestionInProgress = false;
+                }, 300);
+            }
         }
 
         // 设置题目标记
