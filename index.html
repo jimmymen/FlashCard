@@ -33,35 +33,35 @@
         
         .header {
             background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            padding: 12px 20px;
+            padding: 8px 15px;
             text-align: center;
             color: white;
         }
         
         .header h1 {
-            font-size: 1.4rem;
-            margin-bottom: 6px;
+            font-size: 1.2rem;
+            margin-bottom: 4px;
         }
         
         .user-info {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 8px;
-            padding: 4px 8px;
+            margin-bottom: 4px;
+            padding: 2px 6px;
             background: rgba(255,255,255,0.1);
-            border-radius: 6px;
+            border-radius: 4px;
         }
         
         .user-email {
-            font-size: 0.75rem;
+            font-size: 0.7rem;
         }
         
         .sync-status {
             display: flex;
             align-items: center;
-            gap: 4px;
-            font-size: 0.65rem;
+            gap: 3px;
+            font-size: 0.6rem;
         }
         
         .sync-indicator {
@@ -90,8 +90,8 @@
             display: flex;
             justify-content: space-around;
             background: rgba(255,255,255,0.1);
-            padding: 6px;
-            border-radius: 6px;
+            padding: 4px;
+            border-radius: 4px;
         }
         
         .stat-item {
@@ -99,13 +99,13 @@
         }
         
         .stat-number {
-            font-size: 1rem;
+            font-size: 0.9rem;
             font-weight: bold;
         }
         
         .stat-item div:last-child {
-            font-size: 0.7rem;
-            margin-top: 2px;
+            font-size: 0.65rem;
+            margin-top: 1px;
         }
         
         .content {
@@ -118,18 +118,18 @@
         
         .nav-tabs {
             display: flex;
-            border-bottom: 2px solid #eee;
-            margin-bottom: 15px;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 10px;
         }
         
         .tab {
-            padding: 8px 16px;
+            padding: 6px 12px;
             cursor: pointer;
             border: none;
             background: none;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             color: #666;
-            border-bottom: 3px solid transparent;
+            border-bottom: 2px solid transparent;
             transition: all 0.3s;
         }
         
@@ -255,21 +255,37 @@
             height: 100%;
         }
         
+        /* 控制按钮放在顶部 */
+        .study-controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 15px;
+            flex-shrink: 0;
+        }
+        
+        .study-controls .btn {
+            flex: 1;
+            padding: 10px 16px;
+            font-size: 0.9rem;
+            max-width: 150px;
+        }
+        
         /* 学习模式样式 */
         .study-card {
             background: #f8f9fa;
             border-radius: 15px;
-            padding: 30px 25px;
-            margin-bottom: 15px;
+            padding: 25px 20px;
             flex: 1;
             display: flex;
             flex-direction: column;
             justify-content: center;
             min-height: 0;
+            margin-bottom: 10px;
         }
         
         .question {
-            font-size: 1.4rem;
+            font-size: 1.3rem;
             line-height: 1.5;
             margin-bottom: 20px;
             color: #333;
@@ -278,7 +294,7 @@
         }
         
         .answer {
-            font-size: 1.3rem;
+            font-size: 1.2rem;
             line-height: 1.5;
             color: #2d3748;
             background: #e6fffa;
@@ -339,14 +355,24 @@
             transform: none;
         }
         
-        /* 标记按钮 */
+        /* 标记按钮移到底部 */
         .mark-buttons {
             display: flex;
-            gap: 8px;
+            gap: 6px;
             justify-content: center;
             margin-top: 10px;
             flex-shrink: 0;
             flex-wrap: wrap;
+        }
+        
+        .mark-btn {
+            padding: 6px 12px;
+            border: 2px solid;
+            border-radius: 15px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.3s;
         }
         
         .mark-btn {
@@ -484,17 +510,17 @@
         
         .progress-bar {
             width: 100%;
-            height: 3px;
+            height: 2px;
             background: #e2e8f0;
-            border-radius: 2px;
-            margin-top: 6px;
+            border-radius: 1px;
+            margin-top: 4px;
             overflow: hidden;
         }
         
         .progress-fill {
             height: 100%;
             background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            border-radius: 2px;
+            border-radius: 1px;
             transition: width 0.3s ease;
         }
         
@@ -1365,6 +1391,10 @@ A: 这是第二道题的答案
             }
             
             studyContent.innerHTML = `
+                <div class="study-controls">
+                    <button class="btn btn-primary" id="showAnswerBtn" onclick="toggleAnswer()">${window.showingAnswer ? '隐藏答案' : '显示答案'}</button>
+                    <button class="btn btn-secondary" onclick="nextQuestion()">下一题 (${window.currentIndex + 1}/${currentQuestions.length})</button>
+                </div>
                 <div class="study-card">
                     <div class="question">${currentQ.question}</div>
                     <div class="answer ${window.showingAnswer ? 'show' : ''}" id="answerDiv">${currentQ.answer}</div>
@@ -1374,10 +1404,6 @@ A: 这是第二道题的答案
                     <button class="mark-btn ${currentQ.mark === 'uncertain' ? 'active' : ''} uncertain" onclick="setMark('uncertain')">不确定</button>
                     <button class="mark-btn ${currentQ.mark === 'important' ? 'active' : ''} important" onclick="setMark('important')">重要</button>
                     <button class="mark-btn ${currentQ.mark === 'difficult' ? 'active' : ''} difficult" onclick="setMark('difficult')">易错</button>
-                </div>
-                <div class="controls">
-                    <button class="btn btn-primary" id="showAnswerBtn" onclick="toggleAnswer()">${window.showingAnswer ? '隐藏答案' : '显示答案'}</button>
-                    <button class="btn btn-secondary" onclick="nextQuestion()">下一题 (${window.currentIndex + 1}/${currentQuestions.length})</button>
                 </div>
             `;
         }
