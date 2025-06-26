@@ -715,6 +715,7 @@ A: 这是第二道题的答案
   storageBucket: "flashcard-f9207.firebasestorage.app",
   messagingSenderId: "434986412944",
   appId: "1:434986412944:web:b2b2217ecedd81eabe2115",
+  measurementId: "G-616727LSE4"
         };
 
         // 初始化 Firebase
@@ -746,11 +747,13 @@ A: 这是第二道题的答案
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 currentUser = user;
+                window.currentUser = user; // 暴露到全局
                 document.getElementById('userEmail').textContent = user.email;
                 showMainApp();
                 loadUserData();
             } else {
                 currentUser = null;
+                window.currentUser = null; // 暴露到全局
                 showLoginScreen();
                 if (unsubscribeQuestions) unsubscribeQuestions();
                 if (unsubscribeProgress) unsubscribeProgress();
@@ -871,6 +874,10 @@ A: 这是第二道题的答案
                         questions.push({ id: doc.id, ...doc.data() });
                     });
                     questions.sort((a, b) => a.order - b.order);
+                    
+                    // 更新全局变量
+                    window.questions = questions;
+                    
                     updateStats();
                     displayQuestionList();
                     if (questions.length > 0) {
@@ -965,7 +972,7 @@ A: 这是第二道题的答案
             }
         }
 
-        // 将函数暴露到全局作用域
+        // 将变量暴露到全局作用域
         window.loginWithGoogle = loginWithGoogle;
         window.loginWithEmail = loginWithEmail;
         window.registerWithEmail = registerWithEmail;
@@ -973,6 +980,14 @@ A: 这是第二道题的答案
         window.saveQuestionToCloud = saveQuestionToCloud;
         window.saveProgressToCloud = saveProgressToCloud;
         window.deleteAllQuestions = deleteAllQuestions;
+        
+        // 暴露全局变量
+        window.questions = questions;
+        window.currentUser = currentUser;
+        window.currentIndex = currentIndex;
+        window.studyMode = studyMode;
+        window.reviewFilters = reviewFilters;
+        window.reviewQuestions = reviewQuestions;
         
         // 页面加载完成
         window.addEventListener('load', () => {
@@ -1127,6 +1142,12 @@ A: 这是第二道题的答案
 
         // 导入题目
         async function importQuestions() {
+            // 检查用户是否登录
+            if (!window.currentUser) {
+                alert('请先登录再导入题目');
+                return;
+            }
+            
             const text = document.getElementById('importText').value.trim();
             if (!text) {
                 alert('请输入题目内容');
@@ -1140,17 +1161,22 @@ A: 这是第二道题的答案
             }
             
             try {
+                // 确保questions数组已初始化
+                if (!window.questions) {
+                    window.questions = [];
+                }
+                
                 // 保存到云端
                 for (let i = 0; i < newQuestions.length; i++) {
-                    newQuestions[i].order = questions.length + i;
-                    await window.saveQuestionToCloud(newQuestions[i], questions.length + i);
+                    newQuestions[i].order = window.questions.length + i;
+                    await window.saveQuestionToCloud(newQuestions[i], window.questions.length + i);
                 }
                 
                 hideTextImport();
                 alert(`成功导入 ${newQuestions.length} 道题目`);
                 
                 // 如果是第一次导入，切换到学习模式
-                if (questions.length === 0) {
+                if (window.questions.length === 0) {
                     setTimeout(() => {
                         switchTab('study');
                         document.querySelector('.tab').click();
@@ -1217,17 +1243,21 @@ A: 这是第二道题的答案
         function showQuestion() {
             const studyContent = document.getElementById('studyContent');
             
-            if (studyMode === 'normal' && questions.length === 0) {
+            // 确保变量已初始化
+            if (!window.questions) window.questions = [];
+            if (!window.reviewQuestions) window.reviewQuestions = [];
+            
+            if (studyMode === 'normal' && window.questions.length === 0) {
                 studyContent.innerHTML = '<div class="no-data">📚 还没有题目，请先在"题目管理"中添加题目</div>';
                 return;
             }
             
-            if (studyMode === 'review' && reviewQuestions.length === 0) {
+            if (studyMode === 'review' && window.reviewQuestions.length === 0) {
                 studyContent.innerHTML = '<div class="no-data">🎯 没有符合筛选条件的题目</div>';
                 return;
             }
             
-            const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
+            const currentQuestions = studyMode === 'review' ? window.reviewQuestions : window.questions;
             const currentQ = currentQuestions[currentIndex];
             
             if (!currentQ) {
