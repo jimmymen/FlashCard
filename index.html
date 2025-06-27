@@ -1123,7 +1123,7 @@ A: 这是第二道题的答案
                         
                         // 只在远程时间戳较新且编号不同时才同步
                         if (remoteTimestamp > localState.lastProgressSave && remoteIndex !== currentIndex) {
-                            console.log(`同步题目编号: ${currentIndex} -> ${remoteIndex}`);
+                            console.log(`🔄 同步题目编号: ${currentIndex} -> ${remoteIndex} (时间戳: ${remoteTimestamp})`);
                             
                             currentIndex = remoteIndex;
                             window.currentIndex = currentIndex;
@@ -1616,7 +1616,10 @@ A: 这是第二道题的答案
                     window.currentIndex = 0;
                 }
                 
-                console.log(`➡️ 从题目 ${oldIndex + 1} 跳转到 ${window.currentIndex + 1}`);
+                // 同步更新全局变量
+                currentIndex = window.currentIndex;
+                
+                console.log(`➡️ 从题目 ${oldIndex + 1} 跳转到 ${window.currentIndex + 1} (currentIndex=${currentIndex})`);
                 
                 // 重置答案显示状态
                 window.showingAnswer = false;
@@ -1626,7 +1629,7 @@ A: 这是第二道题的答案
                 
                 // 保存新的题目编号
                 if (window.saveCurrentIndexOnly) {
-                    console.log('💾 准备保存新的题目编号...');
+                    console.log(`💾 准备保存新的题目编号: ${currentIndex}`);
                     await window.saveCurrentIndexOnly();
                 }
                 
