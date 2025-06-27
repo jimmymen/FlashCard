@@ -968,11 +968,20 @@ A: 这是第二道题的答案
         // 新增：只同步题目编号的函数
         let saveIndexTimeout = null;
         async function saveCurrentIndexOnly() {
-            if (operationLocks.saveProgress || !currentUser) return;
+            if (!currentUser) {
+                console.log('❌ 保存失败：用户未登录');
+                return;
+            }
+            
+            if (operationLocks.saveProgress) {
+                console.log('⏳ 保存被锁定，跳过');
+                return;
+            }
             
             // 清除之前的定时器
             if (saveIndexTimeout) {
                 clearTimeout(saveIndexTimeout);
+                console.log('🔄 清除之前的保存定时器');
             }
             
             // 设置新的定时器，只保存当前题目编号
@@ -981,6 +990,8 @@ A: 这是第二道题的答案
                     operationLocks.saveProgress = true;
                     localState.lastProgressSave = Date.now();
                     
+                    console.log(`💾 开始保存题目编号: ${currentIndex}`);
+                    
                     const progressRef = doc(db, 'users', currentUser.uid, 'settings', 'progress');
                     await setDoc(progressRef, {
                         currentIndex: currentIndex,
@@ -988,10 +999,12 @@ A: 这是第二道题的答案
                         updatedAt: new Date()
                     }, { merge: true }); // 使用merge只更新指定字段
                     
-                    console.log('已保存题目编号:', currentIndex);
+                    console.log(`✅ 成功保存题目编号: ${currentIndex}, 时间戳: ${localState.lastProgressSave}`);
+                    setSyncStatus('synced', '已同步');
                     
                 } catch (error) {
-                    console.error('保存编号失败:', error);
+                    console.error('❌ 保存编号失败:', error);
+                    setSyncStatus('error', '保存失败');
                 } finally {
                     operationLocks.saveProgress = false;
                 }
@@ -1000,10 +1013,15 @@ A: 这是第二道题的答案
         
         // 保存完整状态（仅在模式切换时使用）
         async function saveFullProgress() {
-            if (!currentUser) return;
+            if (!currentUser) {
+                console.log('❌ 保存完整状态失败：用户未登录');
+                return;
+            }
             
             try {
                 localState.lastProgressSave = Date.now();
+                
+                console.log(`💾 开始保存完整状态: 编号${currentIndex}, 模式${studyMode}`);
                 
                 const progressRef = doc(db, 'users', currentUser.uid, 'settings', 'progress');
                 await setDoc(progressRef, {
@@ -1015,10 +1033,12 @@ A: 这是第二道题的答案
                     updatedAt: new Date()
                 });
                 
-                console.log('已保存完整进度');
+                console.log(`✅ 成功保存完整状态, 时间戳: ${localState.lastProgressSave}`);
+                setSyncStatus('synced', '已同步');
                 
             } catch (error) {
-                console.error('保存完整进度失败:', error);
+                console.error('❌ 保存完整进度失败:', error);
+                setSyncStatus('error', '保存失败');
             }
         }
 
@@ -1035,7 +1055,7 @@ A: 这是第二道题的答案
                 
                 if (progressSnap.exists()) {
                     const progress = progressSnap.data();
-                    console.log('加载保存的进度:', progress);
+                    console.log('📖 加载保存的进度:', progress);
                     
                     // 恢复保存的状态
                     currentIndex = progress.currentIndex || 0;
@@ -1051,7 +1071,9 @@ A: 这是第二道题的答案
                     
                     localState.lastProgressSave = progress.timestamp || 0;
                     
-                    console.log(`已恢复进度: 题目${currentIndex + 1}, 模式${studyMode}`);
+                    console.log(`✅ 已恢复进度: 题目${currentIndex + 1}, 模式${studyMode}, 时间戳${localState.lastProgressSave}`);
+                } else {
+                    console.log('📝 没有找到保存的进度，使用默认值');
                 }
                 
                 // 实时监听题目数据
@@ -1089,7 +1111,7 @@ A: 这是第二道题的答案
                     displayQuestionList();
                     showQuestion();
                     
-                    console.log(`题目加载完成，当前显示第${currentIndex + 1}题`);
+                    console.log(`📚 题目加载完成(共${questions.length}题)，当前显示第${currentIndex + 1}题`);
                 });
                 
                 // 监听学习进度 - 简化版本，只同步题目编号
@@ -1129,7 +1151,7 @@ A: 这是第二道题的答案
                             window.showingAnswer = showingAnswer;
                             
                             if (studyMode === 'review' && reviewFilters.length > 0) {
-                                reviewQuestions = questions.filter(q => reviewQuestions.includes(q.mark));
+                                reviewQuestions = questions.filter(q => reviewFilters.includes(q.mark));
                                 window.reviewQuestions = reviewQuestions;
                             }
                             
@@ -1571,7 +1593,7 @@ A: 这是第二道题的答案
         async function nextQuestion() {
             // 防止重复点击
             if (window.operationLocks?.nextQuestion) {
-                console.log('nextQuestion 操作被锁定，跳过');
+                console.log('⏳ nextQuestion 操作被锁定，跳过');
                 return;
             }
             
@@ -1582,7 +1604,7 @@ A: 这是第二道题的答案
                 const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
                 
                 if (!currentQuestions || currentQuestions.length === 0) {
-                    console.log('没有题目可供学习');
+                    console.log('❌ 没有题目可供学习');
                     return;
                 }
                 
@@ -1594,21 +1616,22 @@ A: 这是第二道题的答案
                     window.currentIndex = 0;
                 }
                 
-                console.log(`从题目 ${oldIndex + 1} 跳转到 ${window.currentIndex + 1}`);
+                console.log(`➡️ 从题目 ${oldIndex + 1} 跳转到 ${window.currentIndex + 1}`);
                 
                 // 重置答案显示状态
                 window.showingAnswer = false;
                 
-                // 只保存题目编号
+                // 立即更新显示
+                showQuestion();
+                
+                // 保存新的题目编号
                 if (window.saveCurrentIndexOnly) {
+                    console.log('💾 准备保存新的题目编号...');
                     await window.saveCurrentIndexOnly();
                 }
                 
-                // 刷新显示
-                showQuestion();
-                
             } catch (error) {
-                console.error('下一题失败:', error);
+                console.error('❌ 下一题失败:', error);
             } finally {
                 // 延迟释放锁
                 setTimeout(() => {
