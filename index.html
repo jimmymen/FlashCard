@@ -1029,6 +1029,31 @@ A: 这是第二道题的答案
             try {
                 setSyncStatus('syncing', '同步中...');
                 
+                // 先加载保存的进度
+                const progressRef = doc(db, 'users', currentUser.uid, 'settings', 'progress');
+                const progressSnap = await getDoc(progressRef);
+                
+                if (progressSnap.exists()) {
+                    const progress = progressSnap.data();
+                    console.log('加载保存的进度:', progress);
+                    
+                    // 恢复保存的状态
+                    currentIndex = progress.currentIndex || 0;
+                    studyMode = progress.studyMode || 'normal';
+                    reviewFilters = progress.reviewFilters || [];
+                    showingAnswer = false; // 刷新后重置答案显示
+                    
+                    // 更新全局变量
+                    window.currentIndex = currentIndex;
+                    window.studyMode = studyMode;
+                    window.reviewFilters = reviewFilters;
+                    window.showingAnswer = showingAnswer;
+                    
+                    localState.lastProgressSave = progress.timestamp || 0;
+                    
+                    console.log(`已恢复进度: 题目${currentIndex + 1}, 模式${studyMode}`);
+                }
+                
                 // 实时监听题目数据
                 const questionsRef = collection(db, 'users', currentUser.uid, 'questions');
                 unsubscribeQuestions = onSnapshot(questionsRef, (snapshot) => {
@@ -1039,17 +1064,35 @@ A: 这是第二道题的答案
                     questions.sort((a, b) => a.order - b.order);
                     
                     window.questions = questions;
+                    
+                    // 题目加载完成后，重新验证currentIndex
+                    if (studyMode === 'review' && reviewFilters.length > 0) {
+                        reviewQuestions = questions.filter(q => reviewFilters.includes(q.mark));
+                        window.reviewQuestions = reviewQuestions;
+                        
+                        // 确保复习模式下的索引不越界
+                        if (currentIndex >= reviewQuestions.length && reviewQuestions.length > 0) {
+                            currentIndex = 0;
+                            window.currentIndex = 0;
+                            saveCurrentIndexOnly();
+                        }
+                    } else {
+                        // 确保普通模式下的索引不越界
+                        if (currentIndex >= questions.length && questions.length > 0) {
+                            currentIndex = 0;
+                            window.currentIndex = 0;
+                            saveCurrentIndexOnly();
+                        }
+                    }
+                    
                     updateStats();
                     displayQuestionList();
+                    showQuestion();
                     
-                    // 只在题目变化时刷新显示
-                    if (questions.length > 0) {
-                        showQuestion();
-                    }
+                    console.log(`题目加载完成，当前显示第${currentIndex + 1}题`);
                 });
                 
                 // 监听学习进度 - 简化版本，只同步题目编号
-                const progressRef = doc(db, 'users', currentUser.uid, 'settings', 'progress');
                 unsubscribeProgress = onSnapshot(progressRef, (doc) => {
                     if (doc.exists() && !operationLocks.saveProgress) {
                         const progress = doc.data();
@@ -1086,7 +1129,7 @@ A: 这是第二道题的答案
                             window.showingAnswer = showingAnswer;
                             
                             if (studyMode === 'review' && reviewFilters.length > 0) {
-                                reviewQuestions = questions.filter(q => reviewFilters.includes(q.mark));
+                                reviewQuestions = questions.filter(q => reviewQuestions.includes(q.mark));
                                 window.reviewQuestions = reviewQuestions;
                             }
                             
@@ -1509,9 +1552,9 @@ A: 这是第二道题的答案
                     }
                 }
                 
-                // 使用防抖保存进度
-                if (window.saveProgressWithDebounce) {
-                    await window.saveProgressWithDebounce();
+                // 使用新的保存函数，只保存题目编号
+                if (window.saveCurrentIndexOnly) {
+                    await window.saveCurrentIndexOnly();
                 }
                 
             } catch (error) {
@@ -1556,9 +1599,9 @@ A: 这是第二道题的答案
                 // 重置答案显示状态
                 window.showingAnswer = false;
                 
-                // 使用防抖保存进度
-                if (window.saveProgressWithDebounce) {
-                    await window.saveProgressWithDebounce();
+                // 只保存题目编号
+                if (window.saveCurrentIndexOnly) {
+                    await window.saveCurrentIndexOnly();
                 }
                 
                 // 刷新显示
@@ -1647,8 +1690,9 @@ A: 这是第二道题的答案
             window.currentIndex = currentIndex;
             window.reviewQuestions = reviewQuestions;
             
-            if (window.saveProgressWithDebounce) {
-                await window.saveProgressWithDebounce();
+            // 使用完整保存函数，因为这是模式切换
+            if (window.saveFullProgress) {
+                await window.saveFullProgress();
             }
             
             switchTab('study');
@@ -1666,8 +1710,9 @@ A: 这是第二道题的答案
                     window.currentIndex = currentIndex;
                     window.studyMode = studyMode;
                     
-                    if (window.saveProgressWithDebounce) {
-                        await window.saveProgressWithDebounce();
+                    // 使用完整保存，因为这是状态重置
+                    if (window.saveFullProgress) {
+                        await window.saveFullProgress();
                     }
                     
                     updateStats();
