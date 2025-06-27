@@ -984,22 +984,28 @@ A: 这是第二道题的答案
                 console.log('🔄 清除之前的保存定时器');
             }
             
+            // 获取当前最新的索引值
+            const indexToSave = window.currentIndex;
+            
             // 设置新的定时器，只保存当前题目编号
             saveIndexTimeout = setTimeout(async () => {
                 try {
                     operationLocks.saveProgress = true;
                     localState.lastProgressSave = Date.now();
                     
-                    console.log(`💾 开始保存题目编号: ${currentIndex}`);
+                    console.log(`💾 开始保存题目编号: ${indexToSave}`);
                     
                     const progressRef = doc(db, 'users', currentUser.uid, 'settings', 'progress');
                     await setDoc(progressRef, {
-                        currentIndex: currentIndex,
+                        currentIndex: indexToSave,
                         timestamp: localState.lastProgressSave,
                         updatedAt: new Date()
                     }, { merge: true }); // 使用merge只更新指定字段
                     
-                    console.log(`✅ 成功保存题目编号: ${currentIndex}, 时间戳: ${localState.lastProgressSave}`);
+                    // 同步更新全局变量
+                    currentIndex = indexToSave;
+                    
+                    console.log(`✅ 成功保存题目编号: ${indexToSave}, 时间戳: ${localState.lastProgressSave}`);
                     setSyncStatus('synced', '已同步');
                     
                 } catch (error) {
