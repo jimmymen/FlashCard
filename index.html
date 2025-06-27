@@ -1487,12 +1487,14 @@ A: 这是第二道题的答案
         function showQuestion() {
             const studyContent = document.getElementById('studyContent');
             
+            // 确保变量已初始化
             if (!window.questions) window.questions = [];
             if (!window.reviewQuestions) window.reviewQuestions = [];
             if (typeof window.currentIndex === 'undefined') window.currentIndex = 0;
             if (typeof window.studyMode === 'undefined') window.studyMode = 'normal';
             if (typeof window.showingAnswer === 'undefined') window.showingAnswer = false;
             
+            // 检查是否有题目
             if (window.studyMode === 'normal' && window.questions.length === 0) {
                 studyContent.innerHTML = '<div class="no-data">📚 还没有题目，请先在"题目管理"中添加题目</div>';
                 return;
@@ -1503,7 +1505,14 @@ A: 这是第二道题的答案
                 return;
             }
             
+            // 获取当前题目集合和题目
             const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
+            
+            // 确保索引有效
+            if (window.currentIndex >= currentQuestions.length) {
+                window.currentIndex = 0;
+            }
+            
             const currentQ = currentQuestions[window.currentIndex];
             
             if (!currentQ) {
@@ -1511,10 +1520,11 @@ A: 这是第二道题的答案
                 return;
             }
             
+            // 渲染题目界面
             studyContent.innerHTML = `
                 <div class="study-controls">
                     <button class="btn btn-primary" id="showAnswerBtn" onclick="toggleAnswer()">${window.showingAnswer ? '隐藏答案' : '显示答案'}</button>
-                    <button class="btn btn-secondary" onclick="nextQuestion()">下一题 (${window.currentIndex + 1}/${currentQuestions.length})</button>
+                    <button class="btn btn-secondary" id="nextBtn" onclick="nextQuestion()">下一题 (${window.currentIndex + 1}/${currentQuestions.length})</button>
                 </div>
                 <div class="study-card">
                     <div class="question">${currentQ.question}</div>
@@ -1527,6 +1537,13 @@ A: 这是第二道题的答案
                     <button class="mark-btn ${currentQ.mark === 'difficult' ? 'active' : ''} difficult" onclick="setMark('difficult')">易错</button>
                 </div>
             `;
+            
+            console.log('题目显示完成:', {
+                currentIndex: window.currentIndex,
+                showingAnswer: window.showingAnswer,
+                questionText: currentQ.question,
+                totalQuestions: currentQuestions.length
+            });
         }
 
         // 切换答案显示
@@ -1536,52 +1553,79 @@ A: 这是第二道题的答案
             
             if (!answerDiv || !showAnswerBtn) return;
             
-            if (window.showingAnswer) {
-                answerDiv.classList.remove('show');
-                showAnswerBtn.textContent = '显示答案';
-                window.showingAnswer = false;
-            } else {
-                answerDiv.classList.add('show');
-                showAnswerBtn.textContent = '隐藏答案';
-                window.showingAnswer = true;
-                
-                // 标记为已学习
-                const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
-                if (currentQuestions && currentQuestions[window.currentIndex]) {
-                    const currentQ = currentQuestions[window.currentIndex];
-                    if (!currentQ.studied) {
-                        currentQ.studied = true;
-                        window.markLocalChange();
-                        updateStats();
+            // 防止重复点击
+            if (showAnswerBtn.disabled) return;
+            showAnswerBtn.disabled = true;
+            
+            try {
+                if (window.showingAnswer) {
+                    answerDiv.classList.remove('show');
+                    showAnswerBtn.textContent = '显示答案';
+                    window.showingAnswer = false;
+                } else {
+                    answerDiv.classList.add('show');
+                    showAnswerBtn.textContent = '隐藏答案';
+                    window.showingAnswer = true;
+                    
+                    // 标记为已学习
+                    const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
+                    if (currentQuestions && currentQuestions[window.currentIndex]) {
+                        const currentQ = currentQuestions[window.currentIndex];
+                        if (!currentQ.studied) {
+                            currentQ.studied = true;
+                            updateStats();
+                        }
                     }
                 }
+                
+                // 标记本地变化
+                window.markLocalChange();
+                
+            } finally {
+                // 延迟恢复按钮状态
+                setTimeout(() => {
+                    showAnswerBtn.disabled = false;
+                }, 200);
             }
-            
-            // 标记本地变化
-            window.markLocalChange();
         }
 
         // 下一题
         async function nextQuestion() {
-            const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
+            const nextBtn = event?.target;
             
-            if (!currentQuestions || currentQuestions.length === 0) {
-                return;
+            // 防止重复点击
+            if (nextBtn && nextBtn.disabled) return;
+            if (nextBtn) nextBtn.disabled = true;
+            
+            try {
+                const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
+                
+                if (!currentQuestions || currentQuestions.length === 0) {
+                    return;
+                }
+                
+                // 更新索引
+                if (window.currentIndex < currentQuestions.length - 1) {
+                    window.currentIndex++;
+                } else {
+                    window.currentIndex = 0;
+                }
+                
+                // 重置答案显示状态
+                window.showingAnswer = false;
+                
+                // 标记本地变化
+                window.markLocalChange();
+                
+                // 立即刷新显示
+                showQuestion();
+                
+            } finally {
+                // 延迟恢复按钮状态
+                setTimeout(() => {
+                    if (nextBtn) nextBtn.disabled = false;
+                }, 200);
             }
-            
-            if (window.currentIndex < currentQuestions.length - 1) {
-                window.currentIndex++;
-            } else {
-                window.currentIndex = 0;
-            }
-            
-            window.showingAnswer = false;
-            
-            // 标记本地变化
-            window.markLocalChange();
-            
-            // 刷新显示
-            showQuestion();
         }
 
         // 设置题目标记
