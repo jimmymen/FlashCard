@@ -794,7 +794,7 @@ A: 这是第二道题的答案
     <script type="module">
         // Firebase 配置 - 需要替换为你的配置
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import { getFirestore, collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { getFirestore, collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
         import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
         // ⚠️ 重要：这里需要替换为你的 Firebase 配置
@@ -823,19 +823,8 @@ A: 这是第二道题的答案
         let reviewFilters = [];
         let reviewQuestions = [];
         let currentUser = null;
-        let syncTimer = null;
-        let hasLocalChanges = false;
-
-        // 初始化同步状态
-        window.syncState = {
-            questions: [],
-            currentIndex: 0,
-            showingAnswer: false,
-            studyMode: 'normal',
-            reviewFilters: [],
-            hasLocalChanges: false,
-            lastSyncTime: 0
-        };
+        let unsubscribeQuestions = null;
+        let unsubscribeProgress = null;
 
         // 将 Firebase 相关函数暴露到全局
         window.firebaseAuth = {
@@ -849,176 +838,18 @@ A: 这是第二道题的答案
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 currentUser = user;
-                window.currentUser = user;
+                window.currentUser = user; // 暴露到全局
                 document.getElementById('userEmail').textContent = user.email;
                 showMainApp();
-                initializeUserData();
+                loadUserData();
             } else {
                 currentUser = null;
-                window.currentUser = null;
+                window.currentUser = null; // 暴露到全局
                 showLoginScreen();
-                stopSyncTimer();
+                if (unsubscribeQuestions) unsubscribeQuestions();
+                if (unsubscribeProgress) unsubscribeProgress();
             }
         });
-
-        // 初始化用户数据 - 页面刷新时同步服务器数据
-        async function initializeUserData() {
-            if (!currentUser) return;
-            
-            try {
-                setSyncStatus('syncing', '同步中...');
-                
-                // 首先从服务器获取最新数据
-                await syncFromServer();
-                
-                // 启动定时上传
-                startSyncTimer();
-                
-                setSyncStatus('synced', '已同步');
-                
-            } catch (error) {
-                console.error('初始化数据失败:', error);
-                setSyncStatus('error', '同步失败');
-            }
-        }
-
-        // 从服务器同步数据到本地
-        async function syncFromServer() {
-            if (!currentUser) return;
-            
-            try {
-                // 获取题目数据
-                const questionsRef = collection(db, 'users', currentUser.uid, 'questions');
-                const questionsSnapshot = await getDocs(questionsRef);
-                
-                questions = [];
-                questionsSnapshot.forEach((doc) => {
-                    questions.push({ id: doc.id, ...doc.data() });
-                });
-                questions.sort((a, b) => a.order - b.order);
-                
-                // 获取学习进度
-                const progressRef = doc(db, 'users', currentUser.uid, 'settings', 'progress');
-                const progressDoc = await getDoc(progressRef);
-                
-                if (progressDoc.exists()) {
-                    const progress = progressDoc.data();
-                    currentIndex = progress.currentIndex || 0;
-                    studyMode = progress.studyMode || 'normal';
-                    reviewFilters = progress.reviewFilters || [];
-                    showingAnswer = progress.showingAnswer || false;
-                }
-                
-                // 确保索引不越界
-                if (currentIndex >= questions.length) {
-                    currentIndex = 0;
-                }
-                
-                // 重新计算复习题目
-                if (studyMode === 'review' && reviewFilters.length > 0) {
-                    reviewQuestions = questions.filter(q => reviewFilters.includes(q.mark));
-                    if (currentIndex >= reviewQuestions.length) {
-                        currentIndex = 0;
-                    }
-                }
-                
-                // 更新全局状态
-                updateGlobalState();
-                
-                // 刷新界面
-                updateStats();
-                displayQuestionList();
-                showQuestion();
-                
-                // 标记本地数据已同步
-                hasLocalChanges = false;
-                window.syncState.lastSyncTime = Date.now();
-                
-                console.log('从服务器同步数据完成');
-                
-            } catch (error) {
-                console.error('从服务器同步失败:', error);
-                throw error;
-            }
-        }
-
-        // 上传本地数据到服务器
-        async function syncToServer() {
-            if (!currentUser || !hasLocalChanges) return;
-            
-            try {
-                setSyncStatus('syncing', '上传中...');
-                
-                // 上传所有题目（只上传有变化的）
-                const uploadPromises = questions.map((question, index) => {
-                    return saveQuestionToCloud(question, index);
-                });
-                
-                // 上传学习进度
-                uploadPromises.push(saveProgressToCloud());
-                
-                await Promise.all(uploadPromises);
-                
-                hasLocalChanges = false;
-                window.syncState.lastSyncTime = Date.now();
-                setSyncStatus('synced', '已同步');
-                
-                console.log('上传到服务器完成');
-                
-            } catch (error) {
-                console.error('上传到服务器失败:', error);
-                setSyncStatus('error', '上传失败');
-            }
-        }
-
-        // 启动定时同步
-        function startSyncTimer() {
-            stopSyncTimer(); // 先停止之前的定时器
-            
-            syncTimer = setInterval(async () => {
-                if (hasLocalChanges) {
-                    await syncToServer();
-                }
-            }, 10000); // 每10秒检查一次
-            
-            console.log('启动定时同步器');
-        }
-
-        // 停止定时同步
-        function stopSyncTimer() {
-            if (syncTimer) {
-                clearInterval(syncTimer);
-                syncTimer = null;
-                console.log('停止定时同步器');
-            }
-        }
-
-        // 更新全局状态
-        function updateGlobalState() {
-            window.questions = questions;
-            window.currentIndex = currentIndex;
-            window.studyMode = studyMode;
-            window.reviewFilters = reviewFilters;
-            window.reviewQuestions = reviewQuestions;
-            window.showingAnswer = showingAnswer;
-            
-            // 更新同步状态
-            window.syncState = {
-                questions: [...questions],
-                currentIndex,
-                showingAnswer,
-                studyMode,
-                reviewFilters: [...reviewFilters],
-                hasLocalChanges,
-                lastSyncTime: Date.now()
-            };
-        }
-
-        // 标记本地有变化
-        function markLocalChange() {
-            hasLocalChanges = true;
-            updateGlobalState();
-        }
 
         // Google 登录
         async function loginWithGoogle() {
@@ -1081,15 +912,9 @@ A: 这是第二道题的答案
         // 退出登录
         async function logout() {
             try {
-                // 退出前先同步一次
-                if (hasLocalChanges) {
-                    await syncToServer();
-                }
-                
                 await signOut(auth);
                 questions = [];
                 currentIndex = 0;
-                hasLocalChanges = false;
                 updateStats();
             } catch (error) {
                 console.error('退出失败:', error);
@@ -1125,6 +950,83 @@ A: 这是第二道题的答案
             syncText.textContent = text;
         }
 
+        // 加载用户数据
+        async function loadUserData() {
+            if (!currentUser) return;
+            
+            try {
+                setSyncStatus('syncing', '同步中...');
+                
+                // 实时监听题目数据
+                const questionsRef = collection(db, 'users', currentUser.uid, 'questions');
+                unsubscribeQuestions = onSnapshot(questionsRef, (snapshot) => {
+                    questions = [];
+                    snapshot.forEach((doc) => {
+                        questions.push({ id: doc.id, ...doc.data() });
+                    });
+                    questions.sort((a, b) => a.order - b.order);
+                    
+                    // 更新全局变量
+                    window.questions = questions;
+                    window.currentIndex = currentIndex;
+                    window.studyMode = studyMode;
+                    
+                    updateStats();
+                    displayQuestionList();
+                    
+                    // 强制刷新学习页面
+                    if (questions.length > 0) {
+                        showQuestion();
+                    }
+                });
+                
+                // 监听学习进度
+                const progressRef = doc(db, 'users', currentUser.uid, 'settings', 'progress');
+                unsubscribeProgress = onSnapshot(progressRef, (doc) => {
+                    if (doc.exists() && !window.localOperation && !window.isToggling && !window.isNavigating) {
+                        const progress = doc.data();
+                        const remoteTimestamp = progress.timestamp || 0;
+                        const localTimestamp = window.lastLocalTimestamp || 0;
+                        
+                        // 只在远程时间戳更新时才同步
+                        if (remoteTimestamp > localTimestamp) {
+                            currentIndex = progress.currentIndex || 0;
+                            studyMode = progress.studyMode || 'normal';
+                            reviewFilters = progress.reviewFilters || [];
+                            showingAnswer = progress.showingAnswer || false;
+                            
+                            // 更新全局变量
+                            window.currentIndex = currentIndex;
+                            window.studyMode = studyMode;
+                            window.reviewFilters = reviewFilters;
+                            window.showingAnswer = showingAnswer;
+                            window.lastLocalTimestamp = remoteTimestamp;
+                            
+                            if (studyMode === 'review' && reviewFilters.length > 0) {
+                                reviewQuestions = questions.filter(q => reviewFilters.includes(q.mark));
+                                window.reviewQuestions = reviewQuestions;
+                            }
+                            
+                            // 确保索引不越界
+                            const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
+                            if (currentIndex >= currentQuestions.length) {
+                                currentIndex = 0;
+                                window.currentIndex = 0;
+                            }
+                            
+                            showQuestion();
+                        }
+                    }
+                });
+                
+                setSyncStatus('synced', '已同步');
+                
+            } catch (error) {
+                console.error('加载数据失败:', error);
+                setSyncStatus('error', '同步失败');
+            }
+        }
+
         // 保存题目到云端
         async function saveQuestionToCloud(question, index) {
             if (!currentUser) return;
@@ -1138,27 +1040,36 @@ A: 这是第二道题的答案
                 });
             } catch (error) {
                 console.error('保存题目失败:', error);
-                throw error;
+                setSyncStatus('error', '保存失败');
             }
         }
 
         // 保存进度到云端
         async function saveProgressToCloud() {
-            if (!currentUser) return;
+            if (!window.currentUser) return;
             
             try {
-                const progressRef = doc(db, 'users', currentUser.uid, 'settings', 'progress');
+                // 标记为本地操作，防止监听器干扰
+                window.localOperation = true;
+                
+                const progressRef = doc(db, 'users', window.currentUser.uid, 'settings', 'progress');
                 await setDoc(progressRef, {
-                    currentIndex,
-                    studyMode,
-                    reviewFilters,
-                    showingAnswer,
+                    currentIndex: window.currentIndex,
+                    studyMode: window.studyMode,
+                    reviewFilters: window.reviewFilters,
+                    showingAnswer: window.showingAnswer,
                     updatedAt: new Date(),
-                    timestamp: Date.now()
+                    timestamp: Date.now() // 添加时间戳用于冲突检测
                 });
+                
+                // 延迟清除标记
+                setTimeout(() => {
+                    window.localOperation = false;
+                }, 1500);
             } catch (error) {
                 console.error('保存进度失败:', error);
-                throw error;
+                setSyncStatus('error', '保存失败');
+                window.localOperation = false;
             }
         }
 
@@ -1189,38 +1100,19 @@ A: 这是第二道题的答案
         window.saveQuestionToCloud = saveQuestionToCloud;
         window.saveProgressToCloud = saveProgressToCloud;
         window.deleteAllQuestions = deleteAllQuestions;
-        window.markLocalChange = markLocalChange;
-        window.syncToServer = syncToServer;
-        window.syncFromServer = syncFromServer;
         
         // 暴露全局变量和状态
-        updateGlobalState();
-        
-        // 页面卸载前同步数据
-        window.addEventListener('beforeunload', async (event) => {
-            if (hasLocalChanges) {
-                // 最后一次同步
-                navigator.sendBeacon && navigator.sendBeacon('/sync', JSON.stringify({
-                    action: 'sync',
-                    data: window.syncState
-                }));
-            }
-        });
-        
-        // 页面可见性变化时处理同步
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                // 页面隐藏时立即同步
-                if (hasLocalChanges) {
-                    syncToServer();
-                }
-            } else {
-                // 页面显示时从服务器同步
-                if (currentUser) {
-                    syncFromServer();
-                }
-            }
-        });
+        window.questions = questions;
+        window.currentUser = currentUser;
+        window.currentIndex = currentIndex;
+        window.studyMode = studyMode;
+        window.reviewFilters = reviewFilters;
+        window.reviewQuestions = reviewQuestions;
+        window.showingAnswer = showingAnswer;
+        window.localOperation = false;
+        window.isToggling = false;
+        window.isNavigating = false;
+        window.lastLocalTimestamp = 0;
         
         // 页面加载完成
         window.addEventListener('load', () => {
@@ -1241,6 +1133,7 @@ A: 这是第二道题的答案
             if (tab === 'manage') {
                 displayQuestionList();
             } else if (tab === 'study') {
+                // 强制刷新学习页面
                 showQuestion();
             }
         }
@@ -1377,6 +1270,7 @@ A: 这是第二道题的答案
 
         // 导入题目
         async function importQuestions() {
+            // 检查用户是否登录
             if (!window.currentUser) {
                 alert('请先登录再导入题目');
                 return;
@@ -1395,30 +1289,22 @@ A: 这是第二道题的答案
             }
             
             try {
+                // 确保questions数组已初始化
                 if (!window.questions) {
                     window.questions = [];
                 }
                 
-                // 添加到本地数组
+                // 保存到云端
                 for (let i = 0; i < newQuestions.length; i++) {
                     newQuestions[i].order = window.questions.length + i;
-                    window.questions.push(newQuestions[i]);
+                    await window.saveQuestionToCloud(newQuestions[i], window.questions.length + i);
                 }
-                
-                // 标记有本地变化
-                window.markLocalChange();
-                
-                // 立即上传一次
-                await window.syncToServer();
                 
                 hideTextImport();
                 alert(`成功导入 ${newQuestions.length} 道题目`);
                 
-                // 刷新界面
-                updateStats();
-                displayQuestionList();
-                
-                if (window.questions.length === newQuestions.length) {
+                // 如果是第一次导入，切换到学习模式
+                if (window.questions.length === 0) {
                     setTimeout(() => {
                         switchTab('study');
                         document.querySelector('.tab').click();
@@ -1449,6 +1335,7 @@ A: 这是第二道题的答案
             const listElement = document.getElementById('questionList');
             const countElement = document.getElementById('questionCount');
             
+            // 使用全局变量
             const currentQuestions = window.questions || [];
             
             countElement.textContent = currentQuestions.length;
@@ -1494,7 +1381,6 @@ A: 这是第二道题的答案
             if (typeof window.studyMode === 'undefined') window.studyMode = 'normal';
             if (typeof window.showingAnswer === 'undefined') window.showingAnswer = false;
             
-            // 检查是否有题目
             if (window.studyMode === 'normal' && window.questions.length === 0) {
                 studyContent.innerHTML = '<div class="no-data">📚 还没有题目，请先在"题目管理"中添加题目</div>';
                 return;
@@ -1505,14 +1391,7 @@ A: 这是第二道题的答案
                 return;
             }
             
-            // 获取当前题目集合和题目
             const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
-            
-            // 确保索引有效
-            if (window.currentIndex >= currentQuestions.length) {
-                window.currentIndex = 0;
-            }
-            
             const currentQ = currentQuestions[window.currentIndex];
             
             if (!currentQ) {
@@ -1520,11 +1399,10 @@ A: 这是第二道题的答案
                 return;
             }
             
-            // 渲染题目界面
             studyContent.innerHTML = `
                 <div class="study-controls">
                     <button class="btn btn-primary" id="showAnswerBtn" onclick="toggleAnswer()">${window.showingAnswer ? '隐藏答案' : '显示答案'}</button>
-                    <button class="btn btn-secondary" id="nextBtn" onclick="nextQuestion()">下一题 (${window.currentIndex + 1}/${currentQuestions.length})</button>
+                    <button class="btn btn-secondary" onclick="nextQuestion()">下一题 (${window.currentIndex + 1}/${currentQuestions.length})</button>
                 </div>
                 <div class="study-card">
                     <div class="question">${currentQ.question}</div>
@@ -1537,13 +1415,6 @@ A: 这是第二道题的答案
                     <button class="mark-btn ${currentQ.mark === 'difficult' ? 'active' : ''} difficult" onclick="setMark('difficult')">易错</button>
                 </div>
             `;
-            
-            console.log('题目显示完成:', {
-                currentIndex: window.currentIndex,
-                showingAnswer: window.showingAnswer,
-                questionText: currentQ.question,
-                totalQuestions: currentQuestions.length
-            });
         }
 
         // 切换答案显示
@@ -1554,10 +1425,11 @@ A: 这是第二道题的答案
             if (!answerDiv || !showAnswerBtn) return;
             
             // 防止重复点击
-            if (showAnswerBtn.disabled) return;
-            showAnswerBtn.disabled = true;
+            if (window.isToggling) return;
+            window.isToggling = true;
             
             try {
+                // 使用全局变量
                 if (window.showingAnswer) {
                     answerDiv.classList.remove('show');
                     showAnswerBtn.textContent = '显示答案';
@@ -1573,58 +1445,61 @@ A: 这是第二道题的答案
                         const currentQ = currentQuestions[window.currentIndex];
                         if (!currentQ.studied) {
                             currentQ.studied = true;
+                            await window.saveQuestionToCloud(currentQ, currentQ.order);
                             updateStats();
                         }
                     }
                 }
                 
-                // 标记本地变化
-                window.markLocalChange();
+                // 保存进度但不触发界面更新
+                if (window.saveProgressToCloud) {
+                    await window.saveProgressToCloud();
+                }
                 
             } finally {
-                // 延迟恢复按钮状态
+                // 延迟释放锁
                 setTimeout(() => {
-                    showAnswerBtn.disabled = false;
-                }, 200);
+                    window.isToggling = false;
+                }, 500);
             }
         }
 
         // 下一题
         async function nextQuestion() {
-            const nextBtn = event?.target;
-            
             // 防止重复点击
-            if (nextBtn && nextBtn.disabled) return;
-            if (nextBtn) nextBtn.disabled = true;
+            if (window.isNavigating) return;
+            window.isNavigating = true;
             
             try {
+                // 使用全局变量
                 const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
                 
                 if (!currentQuestions || currentQuestions.length === 0) {
+                    console.log('没有题目可供学习');
                     return;
                 }
                 
-                // 更新索引
                 if (window.currentIndex < currentQuestions.length - 1) {
                     window.currentIndex++;
                 } else {
                     window.currentIndex = 0;
                 }
                 
-                // 重置答案显示状态
                 window.showingAnswer = false;
                 
-                // 标记本地变化
-                window.markLocalChange();
+                // 保存进度
+                if (window.saveProgressToCloud) {
+                    await window.saveProgressToCloud();
+                }
                 
-                // 立即刷新显示
+                // 刷新显示
                 showQuestion();
                 
             } finally {
-                // 延迟恢复按钮状态
+                // 延迟释放锁
                 setTimeout(() => {
-                    if (nextBtn) nextBtn.disabled = false;
-                }, 200);
+                    window.isNavigating = false;
+                }, 300);
             }
         }
 
@@ -1633,15 +1508,14 @@ A: 这是第二道题的答案
             const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
             
             if (!currentQuestions || !currentQuestions[window.currentIndex]) {
+                console.log('没有当前题目可标记');
                 return;
             }
             
             const currentQ = currentQuestions[window.currentIndex];
             currentQ.mark = mark;
             
-            // 标记本地变化
-            window.markLocalChange();
-            
+            await window.saveQuestionToCloud(currentQ, currentQ.order);
             updateStats();
             
             // 更新标记按钮状态
@@ -1658,34 +1532,32 @@ A: 这是第二道题的答案
         function toggleFilter(filter) {
             const btn = event.target;
             
-            if (!window.reviewFilters) window.reviewFilters = [];
-            
-            if (window.reviewFilters.includes(filter)) {
-                window.reviewFilters = window.reviewFilters.filter(f => f !== filter);
+            if (reviewFilters.includes(filter)) {
+                reviewFilters = reviewFilters.filter(f => f !== filter);
                 btn.style.opacity = '0.5';
             } else {
-                window.reviewFilters.push(filter);
+                reviewFilters.push(filter);
                 btn.style.opacity = '1';
             }
         }
 
         // 开始复习
         async function startReview() {
-            if (!window.reviewFilters || window.reviewFilters.length === 0) {
+            if (reviewFilters.length === 0) {
                 alert('请先选择要复习的标记类型');
                 return;
             }
             
-            window.reviewQuestions = window.questions.filter(q => window.reviewFilters.includes(q.mark));
+            reviewQuestions = questions.filter(q => reviewFilters.includes(q.mark));
             
-            if (window.reviewQuestions.length === 0) {
+            if (reviewQuestions.length === 0) {
                 document.getElementById('reviewContent').innerHTML = '<div class="no-data">🎯 没有符合筛选条件的题目</div>';
                 return;
             }
             
-            window.studyMode = 'review';
-            window.currentIndex = 0;
-            window.markLocalChange();
+            studyMode = 'review';
+            currentIndex = 0;
+            await window.saveProgressToCloud();
             
             switchTab('study');
             document.querySelector('.tab').click();
@@ -1696,17 +1568,10 @@ A: 这是第二道题的答案
         async function clearAllQuestions() {
             if (confirm('确定要清空所有题目吗？此操作不可恢复。')) {
                 try {
-                    window.questions = [];
-                    window.currentIndex = 0;
-                    window.studyMode = 'normal';
-                    
-                    // 先删除云端数据
                     await window.deleteAllQuestions();
-                    
-                    // 标记本地变化并同步
-                    window.markLocalChange();
-                    await window.syncToServer();
-                    
+                    currentIndex = 0;
+                    studyMode = 'normal';
+                    await window.saveProgressToCloud();
                     updateStats();
                     displayQuestionList();
                     showQuestion();
@@ -1718,13 +1583,13 @@ A: 这是第二道题的答案
 
         // 导出题目
         function exportQuestions() {
-            if (!window.questions || window.questions.length === 0) {
+            if (questions.length === 0) {
                 alert('没有题目可以导出');
                 return;
             }
             
             let exportText = '';
-            window.questions.forEach((q, index) => {
+            questions.forEach((q, index) => {
                 exportText += `${index + 1}. ${q.question}\n`;
                 exportText += `答案：${q.answer}\n`;
                 if (q.mark !== 'unmarked') {
@@ -1748,11 +1613,12 @@ A: 这是第二道题的答案
             document.body.removeChild(a);
             window.URL.revokeObjectURL(url);
             
-            alert(`成功导出 ${window.questions.length} 道题目`);
+            alert(`成功导出 ${questions.length} 道题目`);
         }
 
         // 更新统计信息
         function updateStats() {
+            // 使用全局变量
             const currentQuestions = window.questions || [];
             
             const total = currentQuestions.length;
