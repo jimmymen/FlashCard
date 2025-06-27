@@ -965,45 +965,61 @@ A: 这是第二道题的答案
             syncText.textContent = text;
         }
 
-        // 新增：防抖的进度保存函数
-        let saveProgressTimeout = null;
-        async function saveProgressWithDebounce() {
-            if (operationLocks.saveProgress) return;
+        // 新增：只同步题目编号的函数
+        let saveIndexTimeout = null;
+        async function saveCurrentIndexOnly() {
+            if (operationLocks.saveProgress || !currentUser) return;
             
             // 清除之前的定时器
-            if (saveProgressTimeout) {
-                clearTimeout(saveProgressTimeout);
+            if (saveIndexTimeout) {
+                clearTimeout(saveIndexTimeout);
             }
             
-            // 设置新的定时器
-            saveProgressTimeout = setTimeout(async () => {
+            // 设置新的定时器，只保存当前题目编号
+            saveIndexTimeout = setTimeout(async () => {
                 try {
                     operationLocks.saveProgress = true;
                     localState.lastProgressSave = Date.now();
-                    localState.ignoreNextSync = true;
                     
                     const progressRef = doc(db, 'users', currentUser.uid, 'settings', 'progress');
                     await setDoc(progressRef, {
-                        currentIndex,
-                        studyMode,
-                        reviewFilters,
-                        showingAnswer,
-                        updatedAt: new Date(),
-                        timestamp: localState.lastProgressSave
-                    });
+                        currentIndex: currentIndex,
+                        timestamp: localState.lastProgressSave,
+                        updatedAt: new Date()
+                    }, { merge: true }); // 使用merge只更新指定字段
                     
-                    // 延迟清除忽略标记
-                    setTimeout(() => {
-                        localState.ignoreNextSync = false;
-                    }, 2000);
+                    console.log('已保存题目编号:', currentIndex);
                     
                 } catch (error) {
-                    console.error('保存进度失败:', error);
-                    setSyncStatus('error', '保存失败');
+                    console.error('保存编号失败:', error);
                 } finally {
                     operationLocks.saveProgress = false;
                 }
-            }, 500); // 500ms 防抖
+            }, 300); // 缩短到300ms
+        }
+        
+        // 保存完整状态（仅在模式切换时使用）
+        async function saveFullProgress() {
+            if (!currentUser) return;
+            
+            try {
+                localState.lastProgressSave = Date.now();
+                
+                const progressRef = doc(db, 'users', currentUser.uid, 'settings', 'progress');
+                await setDoc(progressRef, {
+                    currentIndex,
+                    studyMode,
+                    reviewFilters,
+                    showingAnswer: false, // 切换模式时重置答案显示
+                    timestamp: localState.lastProgressSave,
+                    updatedAt: new Date()
+                });
+                
+                console.log('已保存完整进度');
+                
+            } catch (error) {
+                console.error('保存完整进度失败:', error);
+            }
         }
 
         // 加载用户数据
@@ -1032,25 +1048,39 @@ A: 这是第二道题的答案
                     }
                 });
                 
-                // 监听学习进度 - 改进的同步逻辑
+                // 监听学习进度 - 简化版本，只同步题目编号
                 const progressRef = doc(db, 'users', currentUser.uid, 'settings', 'progress');
                 unsubscribeProgress = onSnapshot(progressRef, (doc) => {
-                    if (doc.exists() && !localState.ignoreNextSync && !localState.syncInProgress) {
+                    if (doc.exists() && !operationLocks.saveProgress) {
                         const progress = doc.data();
+                        const remoteIndex = progress.currentIndex || 0;
                         const remoteTimestamp = progress.timestamp || 0;
                         
-                        // 只在远程时间戳明显较新时才同步
-                        if (remoteTimestamp > localState.lastProgressSave + 1000) {
-                            console.log('同步远程进度:', progress);
+                        // 只在远程时间戳较新且编号不同时才同步
+                        if (remoteTimestamp > localState.lastProgressSave && remoteIndex !== currentIndex) {
+                            console.log(`同步题目编号: ${currentIndex} -> ${remoteIndex}`);
                             
-                            localState.syncInProgress = true;
+                            currentIndex = remoteIndex;
+                            window.currentIndex = currentIndex;
                             
-                            currentIndex = progress.currentIndex || 0;
+                            // 确保索引不越界
+                            const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
+                            if (currentIndex >= currentQuestions.length && currentQuestions.length > 0) {
+                                currentIndex = 0;
+                                window.currentIndex = 0;
+                            }
+                            
+                            // 同步时不改变答案显示状态，保持本地状态
+                            showQuestion();
+                        }
+                        
+                        // 如果包含完整状态更新（模式切换），则同步所有状态
+                        if (progress.studyMode && progress.studyMode !== studyMode) {
+                            console.log('同步模式切换:', progress);
                             studyMode = progress.studyMode || 'normal';
                             reviewFilters = progress.reviewFilters || [];
-                            showingAnswer = progress.showingAnswer || false;
+                            showingAnswer = false; // 模式切换时重置答案显示
                             
-                            window.currentIndex = currentIndex;
                             window.studyMode = studyMode;
                             window.reviewFilters = reviewFilters;
                             window.showingAnswer = showingAnswer;
@@ -1060,18 +1090,7 @@ A: 这是第二道题的答案
                                 window.reviewQuestions = reviewQuestions;
                             }
                             
-                            // 确保索引不越界
-                            const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
-                            if (currentIndex >= currentQuestions.length && currentQuestions.length > 0) {
-                                currentIndex = 0;
-                                window.currentIndex = 0;
-                            }
-                            
                             showQuestion();
-                            
-                            setTimeout(() => {
-                                localState.syncInProgress = false;
-                            }, 1000);
                         }
                     }
                 });
@@ -1126,7 +1145,8 @@ A: 这是第二道题的答案
         window.registerWithEmail = registerWithEmail;
         window.logout = logout;
         window.saveQuestionToCloud = saveQuestionToCloud;
-        window.saveProgressWithDebounce = saveProgressWithDebounce;
+        window.saveCurrentIndexOnly = saveCurrentIndexOnly;
+        window.saveFullProgress = saveFullProgress;
         window.deleteAllQuestions = deleteAllQuestions;
         
         // 暴露全局变量和状态
