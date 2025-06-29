@@ -1679,8 +1679,9 @@ A: 这是第二道题的答案
 
         // 开始复习
         async function startReview() {
-            console.log('开始复习，当前筛选器:', window.reviewFilters);
-            console.log('所有题目:', window.questions);
+            console.log('=== 开始复习调试信息 ===');
+            console.log('当前筛选器:', window.reviewFilters);
+            console.log('所有题目数量:', window.questions ? window.questions.length : 0);
             
             if (!window.reviewFilters || window.reviewFilters.length === 0) {
                 alert('请先选择要复习的标记类型');
@@ -1692,18 +1693,55 @@ A: 这是第二道题的答案
                 return;
             }
             
+            // 详细检查每道题目的标记
+            console.log('=== 题目标记详情 ===');
+            window.questions.forEach((q, index) => {
+                console.log(`题目 ${index + 1}:`, {
+                    question: q.question.substring(0, 50) + '...',
+                    mark: q.mark,
+                    markType: typeof q.mark,
+                    在筛选器中: window.reviewFilters.includes(q.mark)
+                });
+            });
+            
+            // 统计各种标记的数量
+            const markCounts = {
+                unmarked: 0,
+                uncertain: 0,
+                important: 0,
+                difficult: 0
+            };
+            
+            window.questions.forEach(q => {
+                if (markCounts.hasOwnProperty(q.mark)) {
+                    markCounts[q.mark]++;
+                } else {
+                    console.warn('发现未知标记类型:', q.mark);
+                }
+            });
+            
+            console.log('标记统计:', markCounts);
+            console.log('要筛选的标记:', window.reviewFilters);
+            
             // 筛选符合条件的题目
             window.reviewQuestions = window.questions.filter(q => {
                 const hasMatchingMark = window.reviewFilters.includes(q.mark);
-                console.log(`题目 "${q.question}" 标记: ${q.mark}, 是否匹配: ${hasMatchingMark}`);
                 return hasMatchingMark;
             });
             
-            console.log('筛选后的复习题目:', window.reviewQuestions);
+            console.log('筛选结果数量:', window.reviewQuestions.length);
+            console.log('筛选结果:', window.reviewQuestions);
             
             if (window.reviewQuestions.length === 0) {
-                alert(`没有找到标记为 ${window.reviewFilters.join('、')} 的题目。请先在学习模式中标记一些题目。`);
-                document.getElementById('reviewContent').innerHTML = '<div class="no-data">🎯 没有符合筛选条件的题目<br><small>请先在学习模式中标记一些题目</small></div>';
+                const availableMarks = [...new Set(window.questions.map(q => q.mark))].filter(mark => mark !== 'unmarked');
+                alert(`没有找到标记为 ${window.reviewFilters.join('、')} 的题目。\n\n当前题目的标记情况：\n${Object.entries(markCounts).map(([mark, count]) => `${mark}: ${count}道`).join('\n')}\n\n可复习的标记：${availableMarks.join('、') || '无'}`);
+                document.getElementById('reviewContent').innerHTML = `
+                    <div class="no-data">
+                        🎯 没有符合筛选条件的题目<br>
+                        <small>当前标记统计：${Object.entries(markCounts).map(([mark, count]) => `${mark}: ${count}道`).join(', ')}</small><br>
+                        <small>请先在学习模式中标记一些题目</small>
+                    </div>
+                `;
                 return;
             }
             
