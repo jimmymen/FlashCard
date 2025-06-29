@@ -775,9 +775,9 @@ A: 这是第二道题的答案
                 <!-- 复习模式 -->
                 <div id="reviewTab" class="tab-content">
                     <div class="review-filters">
-                        <button class="filter-btn uncertain" onclick="toggleFilter('uncertain')" style="border-color: #fbbf24; color: #f59e0b; opacity: 0.5;">不确定</button>
-                        <button class="filter-btn important" onclick="toggleFilter('important')" style="border-color: #ef4444; color: #dc2626; opacity: 0.5;">重要</button>
-                        <button class="filter-btn difficult" onclick="toggleFilter('difficult')" style="border-color: #8b5cf6; color: #7c3aed; opacity: 0.5;">易错</button>
+                        <button class="filter-btn uncertain" onclick="toggleFilter('uncertain')" style="border-color: #fbbf24; color: #f59e0b; opacity: 0.5; background: white;">不确定</button>
+                        <button class="filter-btn important" onclick="toggleFilter('important')" style="border-color: #ef4444; color: #dc2626; opacity: 0.5; background: white;">重要</button>
+                        <button class="filter-btn difficult" onclick="toggleFilter('difficult')" style="border-color: #8b5cf6; color: #7c3aed; opacity: 0.5; background: white;">易错</button>
                         <button class="btn btn-primary" onclick="startReview()">开始复习</button>
                     </div>
                     <div id="reviewContent">
@@ -1665,16 +1665,44 @@ A: 这是第二道题的答案
             if (!window.reviewFilters) window.reviewFilters = [];
             
             if (window.reviewFilters.includes(filter)) {
+                // 取消选择
                 window.reviewFilters = window.reviewFilters.filter(f => f !== filter);
                 btn.style.opacity = '0.5';
                 btn.style.backgroundColor = 'white';
+                btn.classList.remove('selected');
             } else {
+                // 选择
                 window.reviewFilters.push(filter);
                 btn.style.opacity = '1';
-                btn.style.backgroundColor = btn.style.borderColor || btn.style.color;
+                // 设置选中的背景色
+                const colors = {
+                    'uncertain': '#fbbf24',
+                    'important': '#ef4444', 
+                    'difficult': '#8b5cf6'
+                };
+                btn.style.backgroundColor = colors[filter];
+                btn.style.color = 'white';
+                btn.classList.add('selected');
             }
             
-            console.log('当前筛选器:', window.reviewFilters);
+            console.log('筛选器状态更新:', filter, '当前选中:', window.reviewFilters);
+            
+            // 实时显示符合条件的题目数量
+            if (window.questions && window.questions.length > 0) {
+                const matchingCount = window.questions.filter(q => window.reviewFilters.includes(q.mark)).length;
+                const statusText = window.reviewFilters.length > 0 ? 
+                    `已选择: ${window.reviewFilters.join('、')} (${matchingCount}道题目)` : 
+                    '请选择要复习的标记类型';
+                
+                document.getElementById('reviewContent').innerHTML = `
+                    <div class="no-data">
+                        <p>🔄 ${statusText}</p>
+                        <small style="color: #888; margin-top: 10px; display: block;">
+                            ${window.reviewFilters.length > 0 ? '点击"开始复习"开始学习' : '提示：需要先在学习模式中标记题目，才能在复习模式中看到'}
+                        </small>
+                    </div>
+                `;
+            }
         }
 
         // 开始复习
