@@ -1025,9 +1025,19 @@ A: 这是第二道题的答案
                 showingAnswer,
                 studyMode,
                 reviewFilters: [...reviewFilters],
+                reviewQuestions: [...(reviewQuestions || [])],
                 hasLocalChanges,
                 lastSyncTime: Date.now()
             };
+            
+            console.log('全局状态已更新:', {
+                questionsLength: questions.length,
+                currentIndex,
+                studyMode,
+                reviewFiltersLength: reviewFilters.length,
+                reviewQuestionsLength: (reviewQuestions || []).length,
+                showingAnswer
+            });
         }
 
         // 标记本地有变化
@@ -1829,13 +1839,27 @@ A: 这是第二道题的答案
             window.studyMode = 'review';
             window.currentIndex = 0;
             window.showingAnswer = false;
-            window.markLocalChange();
+            
+            // 确保全局状态同步
+            studyMode = 'review';
+            currentIndex = 0;
+            showingAnswer = false;
+            reviewQuestions = window.reviewQuestions;
             
             console.log('设置复习模式完成:', {
-                studyMode: window.studyMode,
-                currentIndex: window.currentIndex,
-                reviewQuestionsLength: window.reviewQuestions.length
+                'window.studyMode': window.studyMode,
+                'global studyMode': studyMode,
+                'window.currentIndex': window.currentIndex,
+                'global currentIndex': currentIndex,
+                'window.reviewQuestions.length': window.reviewQuestions.length,
+                'global reviewQuestions.length': reviewQuestions.length
             });
+            
+            // 更新全局状态
+            updateGlobalState();
+            
+            // 标记本地变化
+            window.markLocalChange();
             
             // 切换到学习标签页
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
