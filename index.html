@@ -896,9 +896,22 @@ A: 这是第二道题的答案
                 
                 questions = [];
                 questionsSnapshot.forEach((doc) => {
-                    questions.push({ id: doc.id, ...doc.data() });
+                    const questionData = { id: doc.id, ...doc.data() };
+                    // 确保标记字段存在且有效
+                    if (!questionData.mark || typeof questionData.mark !== 'string') {
+                        questionData.mark = 'unmarked';
+                    }
+                    questions.push(questionData);
                 });
-                questions.sort((a, b) => a.order - b.order);
+                questions.sort((a, b) => (a.order || 0) - (b.order || 0));
+                
+                console.log('从服务器加载题目:', questions.length, '道');
+                console.log('标记统计:', {
+                    unmarked: questions.filter(q => q.mark === 'unmarked').length,
+                    uncertain: questions.filter(q => q.mark === 'uncertain').length,
+                    important: questions.filter(q => q.mark === 'important').length,
+                    difficult: questions.filter(q => q.mark === 'difficult').length
+                });
                 
                 // 获取学习进度
                 const progressRef = doc(db, 'users', currentUser.uid, 'settings', 'progress');
@@ -1636,14 +1649,35 @@ A: 这是第二道题的答案
             const currentQuestions = window.studyMode === 'review' ? window.reviewQuestions : window.questions;
             
             if (!currentQuestions || !currentQuestions[window.currentIndex]) {
+                console.log('没有当前题目可标记');
                 return;
             }
             
             const currentQ = currentQuestions[window.currentIndex];
+            const oldMark = currentQ.mark;
             currentQ.mark = mark;
+            
+            console.log(`标记题目: "${currentQ.question.substring(0, 30)}..." 从 ${oldMark} 改为 ${mark}`);
+            
+            // 如果是复习模式，还需要在原始题目数组中更新
+            if (window.studyMode === 'review') {
+                const originalIndex = window.questions.findIndex(q => q.id === currentQ.id);
+                if (originalIndex >= 0) {
+                    window.questions[originalIndex].mark = mark;
+                    console.log('同时更新了原始题目数组中的标记');
+                }
+            }
             
             // 标记本地变化
             window.markLocalChange();
+            
+            // 立即保存到云端
+            try {
+                await window.saveQuestionToCloud(currentQ, currentQ.order || window.currentIndex);
+                console.log('标记已保存到云端');
+            } catch (error) {
+                console.error('保存标记失败:', error);
+            }
             
             updateStats();
             
@@ -1654,6 +1688,12 @@ A: 这是第二道题的答案
             const targetBtn = document.querySelector(`.mark-btn.${mark}`);
             if (targetBtn) {
                 targetBtn.classList.add('active');
+                console.log('更新了标记按钮状态');
+            }
+            
+            // 如果在题目管理页面，刷新列表显示
+            if (document.getElementById('manageTab').classList.contains('active')) {
+                displayQuestionList();
             }
         }
 
