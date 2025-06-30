@@ -1764,12 +1764,14 @@ A: 这是第二道题的答案
             // 详细检查每道题目的标记
             console.log('=== 题目标记详情 ===');
             window.questions.forEach((q, index) => {
-                console.log(`题目 ${index + 1}:`, {
-                    question: q.question.substring(0, 50) + '...',
-                    mark: q.mark,
-                    markType: typeof q.mark,
-                    在筛选器中: window.reviewFilters.includes(q.mark)
-                });
+                if (index < 3) { // 只显示前3道题目的详情
+                    console.log(`题目 ${index + 1}:`, {
+                        question: q.question.substring(0, 50) + '...',
+                        mark: q.mark,
+                        markType: typeof q.mark,
+                        在筛选器中: window.reviewFilters.includes(q.mark)
+                    });
+                }
             });
             
             // 统计各种标记的数量
@@ -1785,20 +1787,30 @@ A: 这是第二道题的答案
                     markCounts[q.mark]++;
                 } else {
                     console.warn('发现未知标记类型:', q.mark);
+                    markCounts[q.mark] = (markCounts[q.mark] || 0) + 1;
                 }
             });
             
             console.log('标记统计:', markCounts);
             console.log('要筛选的标记:', window.reviewFilters);
             
-            // 筛选符合条件的题目
-            window.reviewQuestions = window.questions.filter(q => {
-                const hasMatchingMark = window.reviewFilters.includes(q.mark);
-                return hasMatchingMark;
-            });
+            // 筛选符合条件的题目 - 修复逻辑
+            window.reviewQuestions = [];
             
-            console.log('筛选结果数量:', window.reviewQuestions.length);
-            console.log('筛选结果:', window.reviewQuestions);
+            for (let i = 0; i < window.questions.length; i++) {
+                const q = window.questions[i];
+                const isMatching = window.reviewFilters.includes(q.mark);
+                if (isMatching) {
+                    window.reviewQuestions.push(q);
+                }
+                // 只显示前5个的详细信息
+                if (i < 5) {
+                    console.log(`题目${i}: "${q.question.substring(0, 30)}..." 标记:"${q.mark}" 匹配:${isMatching}`);
+                }
+            }
+            
+            console.log('最终筛选结果数量:', window.reviewQuestions.length);
+            console.log('筛选到的题目示例:', window.reviewQuestions.slice(0, 3));
             
             if (window.reviewQuestions.length === 0) {
                 const availableMarks = [...new Set(window.questions.map(q => q.mark))].filter(mark => mark !== 'unmarked');
@@ -1818,6 +1830,12 @@ A: 这是第二道题的答案
             window.currentIndex = 0;
             window.showingAnswer = false;
             window.markLocalChange();
+            
+            console.log('设置复习模式完成:', {
+                studyMode: window.studyMode,
+                currentIndex: window.currentIndex,
+                reviewQuestionsLength: window.reviewQuestions.length
+            });
             
             // 切换到学习标签页
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
