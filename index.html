@@ -1855,8 +1855,17 @@ A: 这是第二道题的答案
                 'global reviewQuestions.length': reviewQuestions.length
             });
             
-            // 更新全局状态
-            updateGlobalState();
+            // 手动更新全局状态（避免函数调用错误）
+            window.syncState = {
+                questions: [...questions],
+                currentIndex,
+                showingAnswer,
+                studyMode,
+                reviewFilters: [...reviewFilters],
+                reviewQuestions: [...reviewQuestions],
+                hasLocalChanges,
+                lastSyncTime: Date.now()
+            };
             
             // 标记本地变化
             window.markLocalChange();
