@@ -1028,7 +1028,12 @@ A: 这是第二道题的答案
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             
-            event.target.classList.add('active');
+            // 找到对应的标签按钮并激活
+            const tabButton = document.querySelector(`.tab[onclick*="${tab}"]`);
+            if (tabButton) {
+                tabButton.classList.add('active');
+            }
+            
             document.getElementById(tab + 'Tab').classList.add('active');
             
             if (tab === 'manage') {
@@ -1276,19 +1281,25 @@ A: 这是第二道题的答案
             // 确保变量已初始化
             if (!window.questions) window.questions = [];
             if (!window.reviewQuestions) window.reviewQuestions = [];
+            if (typeof window.showingAnswer === 'undefined') window.showingAnswer = false;
             
-            if (studyMode === 'normal' && window.questions.length === 0) {
+            // 使用全局变量
+            const currentShowingAnswer = window.showingAnswer || showingAnswer || false;
+            const currentStudyMode = window.studyMode || studyMode || 'normal';
+            const currentCurrentIndex = window.currentIndex || currentIndex || 0;
+            
+            if (currentStudyMode === 'normal' && window.questions.length === 0) {
                 studyContent.innerHTML = '<div class="no-data">📚 还没有题目，请先在"题目管理"中添加题目</div>';
                 return;
             }
             
-            if (studyMode === 'review' && window.reviewQuestions.length === 0) {
+            if (currentStudyMode === 'review' && window.reviewQuestions.length === 0) {
                 studyContent.innerHTML = '<div class="no-data">🎯 没有符合筛选条件的题目</div>';
                 return;
             }
             
-            const currentQuestions = studyMode === 'review' ? window.reviewQuestions : window.questions;
-            const currentQ = currentQuestions[currentIndex];
+            const currentQuestions = currentStudyMode === 'review' ? window.reviewQuestions : window.questions;
+            const currentQ = currentQuestions[currentCurrentIndex];
             
             if (!currentQ) {
                 studyContent.innerHTML = '<div class="no-data">🎉 所有题目已完成！</div>';
@@ -1307,14 +1318,22 @@ A: 这是第二道题的答案
             studyContent.innerHTML = `
                 <div class="study-card">
                     <div class="question">${currentQ.question}</div>
-                    <div class="answer ${showingAnswer ? 'show' : ''}" id="answerDiv">${currentQ.answer}</div>
+                    <div class="answer ${currentShowingAnswer ? 'show' : ''}" id="answerDiv">${currentQ.answer}</div>
                 </div>
                 ${markButtons}
                 <div class="controls">
-                    <button class="btn btn-primary" id="showAnswerBtn" onclick="toggleAnswer()">${showingAnswer ? '隐藏答案' : '显示答案'}</button>
-                    <button class="btn btn-secondary" onclick="nextQuestion()">下一题 (${currentIndex + 1}/${currentQuestions.length})</button>
+                    <button class="btn btn-primary" id="showAnswerBtn" onclick="toggleAnswer()">${currentShowingAnswer ? '隐藏答案' : '显示答案'}</button>
+                    <button class="btn btn-secondary" onclick="nextQuestion()">下一题 (${currentCurrentIndex + 1}/${currentQuestions.length})</button>
                 </div>
             `;
+            
+            console.log('题目显示完成:', {
+                studyMode: currentStudyMode,
+                currentIndex: currentCurrentIndex,
+                showingAnswer: currentShowingAnswer,
+                question: currentQ.question.substring(0, 50) + '...',
+                totalQuestions: currentQuestions.length
+            });
         }
 
         // 切换答案显示
@@ -1502,12 +1521,26 @@ A: 这是第二道题的答案
             currentIndex = 0;
             showingAnswer = false;
             
+            // 同步到全局变量
+            window.studyMode = 'review';
+            window.currentIndex = 0;
+            window.showingAnswer = false;
+            
+            console.log('复习模式设置完成:', {
+                studyMode: window.studyMode,
+                currentIndex: window.currentIndex,
+                reviewQuestions: window.reviewQuestions.length
+            });
+            
             await window.saveProgressToCloud();
             
             // 切换到学习标签页
             switchTab('study');
-            document.querySelector('.tab').click();
-            showQuestion();
+            
+            // 强制刷新显示
+            setTimeout(() => {
+                showQuestion();
+            }, 100);
             
             alert(`开始复习！找到 ${window.reviewQuestions.length} 道符合条件的题目。`);
         }
