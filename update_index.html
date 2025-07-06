@@ -1079,27 +1079,43 @@ A: 这是第二道题的答案
 
         // 统一的题目获取函数
         function getCurrentQuestion() {
-            if (studyMode === 'review' && reviewMode.isActive) {
-                const questionId = reviewMode.questionIds[reviewMode.currentIndex];
-                return questions.find(q => q.id === questionId);
+            console.log('获取当前题目 - 状态检查:', {
+                studyMode: studyMode,
+                reviewModeActive: window.reviewMode ? window.reviewMode.isActive : 'undefined',
+                reviewCurrentIndex: window.reviewMode ? window.reviewMode.currentIndex : 'undefined',
+                normalCurrentIndex: currentIndex
+            });
+            
+            if (studyMode === 'review' && window.reviewMode && window.reviewMode.isActive) {
+                const questionId = window.reviewMode.questionIds[window.reviewMode.currentIndex];
+                const question = questions.find(q => q.id === questionId);
+                console.log('复习模式 - 找到题目:', question ? question.question.substring(0, 30) : 'null');
+                return question;
             } else {
-                return questions[currentIndex];
+                const question = questions[currentIndex];
+                console.log('普通模式 - 找到题目:', question ? question.question.substring(0, 30) : 'null');
+                return question;
             }
         }
 
         function getCurrentQuestions() {
-            if (studyMode === 'review' && reviewMode.isActive) {
-                return reviewMode.questionIds.map(id => 
+            if (studyMode === 'review' && window.reviewMode && window.reviewMode.isActive) {
+                const reviewQuestions = window.reviewMode.questionIds.map(id => 
                     questions.find(q => q.id === id)
                 ).filter(Boolean);
+                console.log('复习模式题目列表:', reviewQuestions.length, '道题目');
+                return reviewQuestions;
             } else {
+                console.log('普通模式题目列表:', questions.length, '道题目');
                 return questions;
             }
         }
 
         function getCurrentIndex() {
-            return studyMode === 'review' && reviewMode.isActive ? 
-                   reviewMode.currentIndex : currentIndex;
+            const index = (studyMode === 'review' && window.reviewMode && window.reviewMode.isActive) ? 
+                   window.reviewMode.currentIndex : currentIndex;
+            console.log('当前索引:', index, '模式:', studyMode);
+            return index;
         }
 
         // 动态更新复习题库
@@ -1441,10 +1457,19 @@ A: 这是第二道题的答案
         function showQuestion() {
             const studyContent = document.getElementById('studyContent');
             
+            // 使用全局的 studyMode 和 reviewMode 变量
+            const isReviewMode = studyMode === 'review' && window.reviewMode && window.reviewMode.isActive;
             const currentQuestions = window.getCurrentQuestions();
             const currentQ = window.getCurrentQuestion();
             const currentIdx = window.getCurrentIndex();
-            const isReviewMode = studyMode === 'review' && window.reviewMode.isActive;
+            
+            console.log('显示题目 - 当前状态:', {
+                studyMode: studyMode,
+                isReviewMode: isReviewMode,
+                reviewModeActive: window.reviewMode ? window.reviewMode.isActive : 'undefined',
+                questionsCount: currentQuestions ? currentQuestions.length : 0,
+                currentIndex: currentIdx
+            });
             
             if (!isReviewMode && (!currentQuestions || currentQuestions.length === 0)) {
                 studyContent.innerHTML = '<div class="no-data">📚 还没有题目，请先在"题目管理"中添加题目</div>';
@@ -1729,28 +1754,30 @@ A: 这是第二道题的答案
                 return;
             }
             
-            // 设置复习模式
+            // 设置复习模式状态
             window.reviewMode.isActive = true;
             window.reviewMode.currentIndex = 0;
             window.reviewMode.questionIds = filteredQuestions.map(q => q.id);
             
+            // 同步到全局变量
             studyMode = 'review';
             showingAnswer = false;
             
             console.log('复习模式设置完成:', {
                 studyMode: studyMode,
-                reviewMode: window.reviewMode
+                reviewModeActive: window.reviewMode.isActive,
+                reviewQuestionIds: window.reviewMode.questionIds.length,
+                reviewCurrentIndex: window.reviewMode.currentIndex
             });
             
+            // 保存状态到云端
             await window.saveProgressToCloud();
             
             // 切换到学习标签页
             switchTab('study');
             
-            // 强制刷新显示
-            setTimeout(() => {
-                showQuestion();
-            }, 100);
+            // 立即刷新显示
+            showQuestion();
             
             alert(`开始复习！找到 ${filteredQuestions.length} 道符合条件的题目。`);
         }
