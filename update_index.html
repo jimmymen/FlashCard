@@ -1,4 +1,1344 @@
-<!DOCTYPE html>
+// 监听登录状态
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                window.currentUser = user;
+                document.getElementById('userEmail').textContent = user.email;
+                showMainApp();
+                loadUserData();
+            } else {
+                currentUser = null;
+                window.currentUser = null;
+                showLoginScreen();
+                if (unsubscribeQuestions) unsubscribeQuestions();
+                if (unsubscribeProgress) unsubscribeProgress();
+                if (unsubscribeLibraries) unsubscribeLibraries();
+            }
+        });
+
+        // Google 登录
+        async function loginWithGoogle() {
+            try {
+                setSyncStatus('syncing', '登录中...');
+                await signInWithPopup(auth, googleProvider);
+            } catch (error) {
+                console.error('Google登录失败:', error);
+                alert('登录失败: ' + error.message);
+                setSyncStatus('error', '登录失败');
+            }
+        }
+
+        // 邮箱登录
+        async function loginWithEmail() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            if (!email || !password) {
+                alert('请输入邮箱和密码');
+                return;
+            }
+            
+            try {
+                setSyncStatus('syncing', '登录中...');
+                await signInWithEmailAndPassword(auth, email, password);
+            } catch (error) {
+                console.error('邮箱登录失败:', error);
+                alert('登录失败: ' + error.message);
+                setSyncStatus('error', '登录失败');
+            }
+        }
+
+        // 邮箱注册
+        async function registerWithEmail() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            if (!email || !password) {
+                alert('请输入邮箱和密码');
+                return;
+            }
+            
+            if (password.length < 6) {
+                alert('密码至少需要6位');
+                return;
+            }
+            
+            try {
+                setSyncStatus('syncing', '注册中...');
+                await createUserWithEmailAndPassword(auth, email, password);
+                alert('注册成功！');
+            } catch (error) {
+                console.error('注册失败:', error);
+                alert('注册失败: ' + error.message);
+                setSyncStatus('error', '注册失败');
+            }
+        }
+
+        // 退出登录
+        async function logout() {
+            try {
+                await signOut(auth);
+                questions = [];
+                libraries = [];
+                currentLibraryId = null;
+                currentIndex = 0;
+                updateStats();
+            } catch (error) {
+                console.error('退出失败:', error);
+                alert('退出失败: ' + error.message);
+            }
+        }
+
+        // 显示不同界面
+        function showLoginScreen() {
+            document.getElementById('loginScreen').style.display = 'block';
+            document.getElementById('loadingScreen').style.display = 'none';
+            document.getElementById('mainApp').style.display = 'none';
+        }
+
+        function showLoadingScreen() {
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('loadingScreen').style.display = 'block';
+            document.getElementById('mainApp').style.display = 'none';
+        }
+
+        function showMainApp() {
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('loadingScreen').style.display = 'none';
+            document.getElementById('mainApp').style.display = 'block';
+        }
+
+        // 设置同步状态
+        function setSyncStatus(status, text) {
+            const indicator = document.getElementById('syncIndicator');
+            const syncText = document.getElementById('syncText');
+            
+            indicator.className = 'sync-indicator ' + status;
+            syncText.textContent = text;
+        }
+
+        // 加载用户数据
+        async function loadUserData() {
+            if (!currentUser) return;
+            
+            try {
+                setSyncStatus('syncing', '同步中...');
+                
+                // 实时监听题库数据
+                const librariesRef = collection(db, 'users', currentUser.uid, 'libraries');
+                unsubscribeLibraries = onSnapshot(librariesRef, (snapshot) => {
+                    libraries = [];
+                    snapshot.forEach((doc) => {
+                        libraries.push({ id: doc.id, ...doc.data() });
+                    });
+                    // 按创建时间倒序排列（最新的在前面）
+                    libraries.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+                    
+                    window.libraries = libraries;
+                    updateLibrarySelector();
+                    
+                    console.log('题库数据已更新:', libraries.length, '个题库');
+                });
+                
+                // 监听当前题库设置
+                const settingsRef = doc(db, 'users', currentUser.uid, 'settings', 'general');
+                onSnapshot(settingsRef, (doc) => {
+                    if (doc.exists()) {
+                        const settings = doc.data();
+                        const savedLibraryId = settings.currentLibraryId;
+                        
+                        if (savedLibraryId && savedLibraryId !== currentLibraryId) {
+                            currentLibraryId = savedLibraryId;
+                            window.currentLibraryId = currentLibraryId;
+                            loadLibraryData();
+                        }
+                    }
+                });
+                
+                setSyncStatus('synced', '已同步');
+                
+            } catch (error) {
+                console.error('加载数据失败:', error);
+                setSyncStatus('error', '同步失败');
+            }
+        }
+
+        // 加载题库数据
+        async function loadLibraryData() {
+            if (!currentUser || !currentLibraryId) {
+                // 清空题目数据并显示提示
+                questions = [];
+                window.questions = questions;
+                updateStats();
+                showNoLibrarySelected();
+                return;
+            }
+            
+            try {
+                setSyncStatus('syncing', '加载题库...');
+                
+                // 停止之前的监听
+                if (unsubscribeQuestions) unsubscribeQuestions();
+                if (unsubscribeProgress) unsubscribeProgress();
+                
+                // 实时监听当前题库的题目数据
+                const questionsRef = collection(db, 'users', currentUser.uid, 'libraries', currentLibraryId, 'questions');
+                unsubscribeQuestions = onSnapshot(questionsRef, (snapshot) => {
+                    questions = [];
+                    snapshot.forEach((doc) => {
+                        questions.push({ id: doc.id, ...doc.data() });
+                    });
+                    questions.sort((a, b) => a.order - b.order);
+                    
+                    window.questions = questions;
+                    
+                    updateStats();
+                    displayQuestionList();
+                    
+                    if (studyMode !== 'review') {
+                        if (questions.length > 0) {
+                            showQuestion();
+                        } else {
+                            showNoQuestions();
+                        }
+                    }
+                    
+                    console.log('题目数据已更新:', questions.length, '道题目');
+                });
+                
+                // 监听当前题库的学习进度
+                const progressRef = doc(db, 'users', currentUser.uid, 'libraries', currentLibraryId, 'progress', 'current');
+                unsubscribeProgress = onSnapshot(progressRef, (doc) => {
+                    if (doc.exists()) {
+                        const progress = doc.data();
+                        currentIndex = progress.currentIndex || 0;
+                        studyMode = progress.studyMode || 'normal';
+                        reviewFilters = progress.reviewFilters || [];
+                        showingAnswer = progress.showingAnswer || false;
+                        
+                        if (studyMode === 'review' && reviewFilters.length > 0) {
+                            reviewQuestions = questions.filter(q => reviewFilters.includes(q.mark));
+                        }
+                        
+                        const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
+                        if (currentIndex >= currentQuestions.length) {
+                            currentIndex = 0;
+                        }
+                        
+                        showQuestion();
+                    }
+                });
+                
+                setSyncStatus('synced', '已同步');
+                
+            } catch (error) {
+                console.error('加载题库数据失败:', error);
+                setSyncStatus('error', '加载失败');
+            }
+        }
+
+        // 保存题库到云端
+        async function saveLibraryToCloud(library) {
+            if (!currentUser) return;
+            
+            try {
+                const libraryRef = doc(db, 'users', currentUser.uid, 'libraries', library.id);
+                await setDoc(libraryRef, {
+                    ...library,
+                    updatedAt: new Date()
+                });
+            } catch (error) {
+                console.error('保存题库失败:', error);
+                setSyncStatus('error', '保存失败');
+            }
+        }
+
+        // 保存题目到云端
+        async function saveQuestionToCloud(question, index) {
+            if (!currentUser || !currentLibraryId) return;
+            
+            try {
+                const questionRef = doc(db, 'users', currentUser.uid, 'libraries', currentLibraryId, 'questions', question.id || `q_${Date.now()}_${index}`);
+                await setDoc(questionRef, {
+                    ...question,
+                    order: index,
+                    updatedAt: new Date()
+                });
+            } catch (error) {
+                console.error('保存题目失败:', error);
+                setSyncStatus('error', '保存失败');
+            }
+        }
+
+        // 保存进度到云端
+        async function saveProgressToCloud() {
+            if (!currentUser || !currentLibraryId) return;
+            
+            try {
+                const progressRef = doc(db, 'users', currentUser.uid, 'libraries', currentLibraryId, 'progress', 'current');
+                await setDoc(progressRef, {
+                    currentIndex,
+                    studyMode,
+                    reviewFilters,
+                    showingAnswer,
+                    updatedAt: new Date()
+                });
+            } catch (error) {
+                console.error('保存进度失败:', error);
+                setSyncStatus('error', '保存失败');
+            }
+        }
+
+        // 保存当前题库设置
+        async function saveCurrentLibraryToCloud() {
+            if (!currentUser) return;
+            
+            try {
+                const settingsRef = doc(db, 'users', currentUser.uid, 'settings', 'general');
+                await setDoc(settingsRef, {
+                    currentLibraryId,
+                    updatedAt: new Date()
+                }, { merge: true });
+            } catch (error) {
+                console.error('保存设置失败:', error);
+                setSyncStatus('error', '保存失败');
+            }
+        }
+
+        // 删除题库
+        async function deleteLibrary(libraryId) {
+            if (!currentUser) return;
+            
+            try {
+                setSyncStatus('syncing', '删除中...');
+                
+                // 删除题库下的所有题目
+                const questionsRef = collection(db, 'users', currentUser.uid, 'libraries', libraryId, 'questions');
+                const questionsSnapshot = await getDocs(questionsRef);
+                const deleteQuestionPromises = questionsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+                await Promise.all(deleteQuestionPromises);
+                
+                // 删除进度
+                const progressRef = doc(db, 'users', currentUser.uid, 'libraries', libraryId, 'progress', 'current');
+                await deleteDoc(progressRef);
+                
+                // 删除题库
+                const libraryRef = doc(db, 'users', currentUser.uid, 'libraries', libraryId);
+                await deleteDoc(libraryRef);
+                
+                // 如果删除的是当前题库，清空当前题库
+                if (currentLibraryId === libraryId) {
+                    currentLibraryId = null;
+                    window.currentLibraryId = null;
+                    await saveCurrentLibraryToCloud();
+                }
+                
+                setSyncStatus('synced', '已同步');
+            } catch (error) {
+                console.error('删除题库失败:', error);
+                setSyncStatus('error', '删除失败');
+                throw error;
+            }
+        }
+
+        // 将变量暴露到全局作用域
+        window.loginWithGoogle = loginWithGoogle;
+        window.loginWithEmail = loginWithEmail;
+        window.registerWithEmail = registerWithEmail;
+        window.logout = logout;
+        window.saveQuestionToCloud = saveQuestionToCloud;
+        window.saveProgressToCloud = saveProgressToCloud;
+        window.saveLibraryToCloud = saveLibraryToCloud;
+        window.saveCurrentLibraryToCloud = saveCurrentLibraryToCloud;
+        window.deleteLibrary = deleteLibrary;
+        
+        // 暴露全局变量
+        window.questions = questions;
+        window.libraries = libraries;
+        window.currentUser = currentUser;
+        window.currentLibraryId = currentLibraryId;
+        window.currentIndex = currentIndex;
+        window.studyMode = studyMode;
+        window.reviewFilters = reviewFilters;
+        window.reviewQuestions = reviewQuestions;
+        
+        // 页面加载完成
+        window.addEventListener('load', () => {
+            showLoadingScreen();
+        });
+
+    </script>
+
+    <script>
+        // 更新题库选择器
+        function updateLibrarySelector() {
+            const selector = document.getElementById('librarySelect');
+            const currentLibraries = window.libraries || [];
+            
+            // 清空选项
+            selector.innerHTML = '<option value="">选择题库...</option>';
+            
+            // 添加题库选项
+            currentLibraries.forEach(library => {
+                const option = document.createElement('option');
+                option.value = library.id;
+                option.textContent = library.name;
+                selector.appendChild(option);
+            });
+            
+            // 设置当前选中的题库
+            if (window.currentLibraryId) {
+                selector.value = window.currentLibraryId;
+            }
+            
+            console.log('题库选择器已更新:', currentLibraries.length, '个题库');
+        }
+
+        // 切换题库
+        async function switchLibrary() {
+            const selector = document.getElementById('librarySelect');
+            const selectedLibraryId = selector.value;
+            
+            if (selectedLibraryId !== window.currentLibraryId) {
+                window.currentLibraryId = selectedLibraryId;
+                currentLibraryId = selectedLibraryId;
+                
+                // 重置学习状态
+                currentIndex = 0;
+                showingAnswer = false;
+                studyMode = 'normal';
+                reviewFilters = [];
+                
+                window.currentIndex = 0;
+                window.showingAnswer = false;
+                window.studyMode = 'normal';
+                window.reviewFilters = [];
+                
+                await window.saveCurrentLibraryToCloud();
+                
+                if (selectedLibraryId) {
+                    // 加载新题库数据
+                    loadLibraryData();
+                } else {
+                    // 清空数据
+                    questions = [];
+                    window.questions = questions;
+                    updateStats();
+                    showNoLibrarySelected();
+                }
+            }
+        }
+
+        // 显示创建题库弹窗
+        function showCreateLibraryModal() {
+            document.getElementById('createLibraryModal').style.display = 'block';
+            document.getElementById('newLibraryName').focus();
+        }
+
+        // 关闭创建题库弹窗
+        function closeCreateLibraryModal() {
+            document.getElementById('createLibraryModal').style.display = 'none';
+            document.getElementById('newLibraryName').value = '';
+            document.getElementById('newLibraryDescription').value = '';
+        }
+
+        // 创建题库
+        async function createLibrary() {
+            const name = document.getElementById('newLibraryName').value.trim();
+            const description = document.getElementById('newLibraryDescription').value.trim();
+            
+            if (!name) {
+                alert('请输入题库名称');
+                return;
+            }
+            
+            try {
+                const newLibrary = {
+                    id: `lib_${Date.now()}`,
+                    name: name,
+                    description: description,
+                    createdAt: new Date(),
+                    questionCount: 0
+                };
+                
+                await window.saveLibraryToCloud(newLibrary);
+                
+                // 自动切换到新创建的题库
+                window.currentLibraryId = newLibrary.id;
+                currentLibraryId = newLibrary.id;
+                await window.saveCurrentLibraryToCloud();
+                
+                closeCreateLibraryModal();
+                alert(`题库"${name}"创建成功！`);
+                
+            } catch (error) {
+                console.error('创建题库失败:', error);
+                alert('创建题库失败: ' + error.message);
+            }
+        }
+
+        // 显示管理题库弹窗
+        function showManageLibrariesModal() {
+            updateLibrariesList();
+            document.getElementById('manageLibrariesModal').style.display = 'block';
+        }
+
+        // 关闭管理题库弹窗
+        function closeManageLibrariesModal() {
+            document.getElementById('manageLibrariesModal').style.display = 'none';
+        }
+
+        // 更新题库列表
+        function updateLibrariesList() {
+            const listElement = document.getElementById('librariesList');
+            const currentLibraries = window.libraries || [];
+            
+            if (currentLibraries.length === 0) {
+                listElement.innerHTML = '<div class="no-data">还没有题库</div>';
+                return;
+            }
+            
+            listElement.innerHTML = currentLibraries.map(library => {
+                const isCurrent = library.id === window.currentLibraryId;
+                const createdDate = library.createdAt ? new Date(library.createdAt.toMillis()).toLocaleDateString() : '未知';
+                
+                return `
+                    <div class="library-item ${isCurrent ? 'current-library' : ''}">
+                        <div class="library-info">
+                            <div class="library-name">${library.name} ${isCurrent ? '(当前)' : ''}</div>
+                            <div class="library-stats">
+                                ${library.description ? library.description + ' • ' : ''}
+                                创建于 ${createdDate}
+                            </div>
+                        </div>
+                        <div class="library-actions-inline">
+                            ${!isCurrent ? `<button class="btn btn-primary btn-small" onclick="selectLibrary('${library.id}')">选择</button>` : ''}
+                            <button class="btn btn-secondary btn-small" onclick="renameLibrary('${library.id}', '${library.name}')">重命名</button>
+                            <button class="btn btn-secondary btn-small" onclick="confirmDeleteLibrary('${library.id}', '${library.name}')">删除</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 选择题库
+        async function selectLibrary(libraryId) {
+            window.currentLibraryId = libraryId;
+            currentLibraryId = libraryId;
+            await window.saveCurrentLibraryToCloud();
+            
+            document.getElementById('librarySelect').value = libraryId;
+            closeManageLibrariesModal();
+        }
+
+        // 重命名题库
+        async function renameLibrary(libraryId, currentName) {
+            const newName = prompt('请输入新的题库名称:', currentName);
+            if (newName && newName.trim() && newName.trim() !== currentName) {
+                try {
+                    const library = window.libraries.find(lib => lib.id === libraryId);
+                    if (library) {
+                        library.name = newName.trim();
+                        await window.saveLibraryToCloud(library);
+                        updateLibrariesList();
+                    }
+                } catch (error) {
+                    console.error('重命名失败:', error);
+                    alert('重命名失败: ' + error.message);
+                }
+            }
+        }
+
+        // 确认删除题库
+        function confirmDeleteLibrary(libraryId, libraryName) {
+            if (confirm(`确定要删除题库"${libraryName}"吗？\n\n删除后该题库下的所有题目都将被永久删除，此操作不可恢复。`)) {
+                deleteLibraryConfirmed(libraryId);
+            }
+        }
+
+        // 执行删除题库
+        async function deleteLibraryConfirmed(libraryId) {
+            try {
+                await window.deleteLibrary(libraryId);
+                updateLibrariesList();
+                alert('题库删除成功');
+            } catch (error) {
+                console.error('删除题库失败:', error);
+                alert('删除题库失败: ' + error.message);
+            }
+        }
+
+        // 显示没有选择题库的提示
+        function showNoLibrarySelected() {
+            const studyContent = document.getElementById('studyContent');
+            const manageContent = document.getElementById('manageContent');
+            const reviewContent = document.getElementById('reviewContent');
+            
+            const message = '<div class="no-data"><p>📚 请先选择或创建一个题库</p></div>';
+            
+            studyContent.innerHTML = message;
+            manageContent.innerHTML = message;
+            reviewContent.innerHTML = message;
+        }
+
+        // 显示没有题目的提示
+        function showNoQuestions() {
+            const studyContent = document.getElementById('studyContent');
+            studyContent.innerHTML = '<div class="no-data"><p>📚 当前题库还没有题目，请先在"题目管理"中添加题目</p></div>';
+        }
+
+        // 切换标签页
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            
+            const tabButton = document.querySelector(`.tab[onclick*="${tab}"]`);
+            if (tabButton) {
+                tabButton.classList.add('active');
+            }
+            
+            document.getElementById(tab + 'Tab').classList.add('active');
+            
+            if (tab === 'manage') {
+                displayManageContent();
+            } else if (tab === 'review') {
+                displayReviewContent();
+            }
+        }
+
+        // 显示题目管理内容
+        function displayManageContent() {
+            const manageContent = document.getElementById('manageContent');
+            
+            if (!window.currentLibraryId) {
+                showNoLibrarySelected();
+                return;
+            }
+            
+            manageContent.innerHTML = `
+                <div class="import-section">
+                    <h3>📥 导入题目</h3>
+                    <div class="import-methods">
+                        <div class="import-method" onclick="showTextImport()">
+                            <h4>📝 文本导入</h4>
+                            <p>复制粘贴题目文本</p>
+                        </div>
+                        <div class="import-method" onclick="document.getElementById('fileInput').click()">
+                            <h4>📁 文件导入</h4>
+                            <p>选择txt文件</p>
+                        </div>
+                    </div>
+                    
+                    <div id="textImportArea" style="display: none;">
+                        <textarea id="importText" class="textarea-input" placeholder="请输入题目，支持以下格式：
+
+格式1（空行分隔）：
+这是第一道题目？
+这是第一道题的答案
+
+这是第二道题目？
+这是第二道题的答案
+
+格式2（标记符）：
+Q: 这是第一道题目？
+A: 这是第一道题的答案
+
+Q: 这是第二道题目？
+A: 这是第二道题的答案
+
+格式3（序号）：
+1. 这是第一道题目？
+答案：这是第一道题的答案
+
+2. 这是第二道题目？
+答案：这是第二道题的答案"></textarea>
+                        <div class="controls">
+                            <button class="btn btn-primary" onclick="importQuestions()">导入题目</button>
+                            <button class="btn btn-secondary" onclick="hideTextImport()">取消</button>
+                        </div>
+                    </div>
+                    
+                    <input type="file" id="fileInput" class="file-input" accept=".txt" onchange="importFromFile(event)">
+                </div>
+                
+                <div>
+                    <h3>📋 题目列表 (<span id="questionCount">0</span>题)</h3>
+                    <div id="questionList" class="question-list"></div>
+                    <div class="controls">
+                        <button class="btn btn-primary" onclick="showTextImport()">📝 手动添加题目</button>
+                        <button class="btn btn-secondary" onclick="exportQuestions()">📤 导出题目</button>
+                        <button class="btn btn-secondary" onclick="clearAllQuestions()">🗑️ 清空所有题目</button>
+                    </div>
+                </div>
+            `;
+            
+            displayQuestionList();
+        }
+
+        // 显示复习模式内容
+        function displayReviewContent() {
+            const reviewContent = document.getElementById('reviewContent');
+            
+            if (!window.currentLibraryId) {
+                showNoLibrarySelected();
+                return;
+            }
+            
+            reviewContent.innerHTML = `
+                <div class="review-filters">
+                    <button class="filter-btn uncertain" onclick="toggleFilter('uncertain')">不确定</button>
+                    <button class="filter-btn important" onclick="toggleFilter('important')">重要</button>
+                    <button class="filter-btn difficult" onclick="toggleFilter('difficult')">易错</button>
+                    <button class="btn btn-primary" onclick="startReview()">开始复习</button>
+                </div>
+                <div id="reviewStatusContent">
+                    <div class="no-data">
+                        <p>🔄 请选择要复习的标记类型，然后点击"开始复习"</p>
+                    </div>
+                </div>
+            `;
+            
+            updateReviewFiltersDisplay();
+        }
+
+        // 显示文本导入区域
+        function showTextImport() {
+            const textImportArea = document.getElementById('textImportArea');
+            if (textImportArea) {
+                textImportArea.style.display = 'block';
+            }
+        }
+
+        // 隐藏文本导入区域
+        function hideTextImport() {
+            const textImportArea = document.getElementById('textImportArea');
+            const importText = document.getElementById('importText');
+            if (textImportArea) {
+                textImportArea.style.display = 'none';
+            }
+            if (importText) {
+                importText.value = '';
+            }
+        }
+
+        // 解析题目文本
+        function parseQuestions(text) {
+            const questions = [];
+            const lines = text.split('\n').map(line => line.trim()).filter(line => line);
+            
+            // 格式1: Q: A: 标记符格式
+            if (text.includes('Q:') && text.includes('A:')) {
+                let currentQ = '';
+                let currentA = '';
+                let isQuestion = false;
+                
+                for (let line of lines) {
+                    if (line.startsWith('Q:') || line.startsWith('问：')) {
+                        if (currentQ && currentA) {
+                            questions.push({
+                                id: `q_${Date.now()}_${questions.length}`,
+                                question: currentQ,
+                                answer: currentA,
+                                mark: 'unmarked',
+                                studied: false,
+                                order: questions.length
+                            });
+                        }
+                        currentQ = line.replace(/^(Q:|问：)/, '').trim();
+                        currentA = '';
+                        isQuestion = true;
+                    } else if (line.startsWith('A:') || line.startsWith('答：')) {
+                        currentA = line.replace(/^(A:|答：)/, '').trim();
+                        isQuestion = false;
+                    } else if (isQuestion) {
+                        currentQ += ' ' + line;
+                    } else {
+                        currentA += ' ' + line;
+                    }
+                }
+                
+                if (currentQ && currentA) {
+                    questions.push({
+                        id: `q_${Date.now()}_${questions.length}`,
+                        question: currentQ,
+                        answer: currentA,
+                        mark: 'unmarked',
+                        studied: false,
+                        order: questions.length
+                    });
+                }
+            }
+            // 格式2: 序号格式
+            else if (/^\d+\./.test(lines[0])) {
+                let currentQ = '';
+                let currentA = '';
+                
+                for (let line of lines) {
+                    if (/^\d+\./.test(line)) {
+                        if (currentQ && currentA) {
+                            questions.push({
+                                id: `q_${Date.now()}_${questions.length}`,
+                                question: currentQ,
+                                answer: currentA,
+                                mark: 'unmarked',
+                                studied: false,
+                                order: questions.length
+                            });
+                        }
+                        currentQ = line.replace(/^\d+\./, '').trim();
+                        currentA = '';
+                    } else if (line.startsWith('答案：') || line.startsWith('答：')) {
+                        currentA = line.replace(/^(答案：|答：)/, '').trim();
+                    } else if (currentQ && !currentA) {
+                        currentQ += ' ' + line;
+                    } else if (currentA) {
+                        currentA += ' ' + line;
+                    }
+                }
+                
+                if (currentQ && currentA) {
+                    questions.push({
+                        id: `q_${Date.now()}_${questions.length}`,
+                        question: currentQ,
+                        answer: currentA,
+                        mark: 'unmarked',
+                        studied: false,
+                        order: questions.length
+                    });
+                }
+            }
+            // 格式3: 空行分隔格式
+            else {
+                const allLines = text.split('\n').map(line => line.trim());
+                let i = 0;
+                
+                while (i < allLines.length) {
+                    if (allLines[i]) {
+                        const question = allLines[i];
+                        i++;
+                        
+                        while (i < allLines.length && !allLines[i]) {
+                            i++;
+                        }
+                        
+                        if (i < allLines.length && allLines[i]) {
+                            const answer = allLines[i];
+                            questions.push({
+                                id: `q_${Date.now()}_${questions.length}`,
+                                question: question,
+                                answer: answer,
+                                mark: 'unmarked',
+                                studied: false,
+                                order: questions.length
+                            });
+                        }
+                    }
+                    i++;
+                }
+            }
+            
+            return questions;
+        }
+
+        // 导入题目
+        async function importQuestions() {
+            if (!window.currentUser) {
+                alert('请先登录再导入题目');
+                return;
+            }
+            
+            if (!window.currentLibraryId) {
+                alert('请先选择或创建一个题库');
+                return;
+            }
+            
+            const text = document.getElementById('importText').value.trim();
+            if (!text) {
+                alert('请输入题目内容');
+                return;
+            }
+            
+            const newQuestions = parseQuestions(text);
+            if (newQuestions.length === 0) {
+                alert('未能解析出题目，请检查格式');
+                return;
+            }
+            
+            try {
+                if (!window.questions) {
+                    window.questions = [];
+                }
+                
+                for (let i = 0; i < newQuestions.length; i++) {
+                    newQuestions[i].order = window.questions.length + i;
+                    await window.saveQuestionToCloud(newQuestions[i], window.questions.length + i);
+                }
+                
+                hideTextImport();
+                alert(`成功导入 ${newQuestions.length} 道题目到题库`);
+                
+                if (window.questions.length === 0) {
+                    setTimeout(() => {
+                        switchTab('study');
+                    }, 1000);
+                }
+                
+            } catch (error) {
+                console.error('导入失败:', error);
+                alert('导入失败: ' + error.message);
+            }
+        }
+
+        // 从文件导入
+        function importFromFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('importText').value = e.target.result;
+                showTextImport();
+            };
+            reader.readAsText(file);
+        }
+
+        // 显示题目列表
+        function displayQuestionList() {
+            const listElement = document.getElementById('questionList');
+            const countElement = document.getElementById('questionCount');
+            
+            if (!listElement || !countElement) return;
+            
+            const currentQuestions = window.questions || [];
+            
+            countElement.textContent = currentQuestions.length;
+            
+            if (currentQuestions.length === 0) {
+                listElement.innerHTML = '<div class="no-data">还没有题目</div>';
+                return;
+            }
+            
+            listElement.innerHTML = currentQuestions.map((q, index) => {
+                const markText = {
+                    'unmarked': '',
+                    'uncertain': '不确定',
+                    'important': '重要',
+                    'difficult': '易错'
+                }[q.mark];
+                
+                const markColor = {
+                    'unmarked': 'transparent',
+                    'uncertain': '#fbbf24',
+                    'important': '#ef4444',
+                    'difficult': '#8b5cf6'
+                }[q.mark];
+                
+                return `
+                    <div class="question-item">
+                        ${markText ? `<span class="question-mark" style="background-color: ${markColor}">${markText}</span>` : ''}
+                        <div class="question-text">${q.question}</div>
+                        <div class="answer-text">${q.answer}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 显示当前题目
+        function showQuestion() {
+            const studyContent = document.getElementById('studyContent');
+            
+            if (!window.currentLibraryId) {
+                showNoLibrarySelected();
+                return;
+            }
+            
+            if (!window.questions) window.questions = [];
+            if (!window.reviewQuestions) window.reviewQuestions = [];
+            if (typeof window.showingAnswer === 'undefined') window.showingAnswer = false;
+            
+            const currentShowingAnswer = window.showingAnswer || showingAnswer || false;
+            const currentStudyMode = window.studyMode || studyMode || 'normal';
+            const currentCurrentIndex = window.currentIndex || currentIndex || 0;
+            
+            if (currentStudyMode === 'normal' && window.questions.length === 0) {
+                showNoQuestions();
+                return;
+            }
+            
+            if (currentStudyMode === 'review' && window.reviewQuestions.length === 0) {
+                studyContent.innerHTML = '<div class="no-data">🎯 没有符合筛选条件的题目</div>';
+                return;
+            }
+            
+            const currentQuestions = currentStudyMode === 'review' ? window.reviewQuestions : window.questions;
+            const currentQ = currentQuestions[currentCurrentIndex];
+            
+            if (!currentQ) {
+                studyContent.innerHTML = '<div class="no-data">🎉 所有题目已完成！</div>';
+                return;
+            }
+            
+            const markButtons = `
+                <div class="mark-buttons">
+                    <button class="mark-btn ${currentQ.mark === 'unmarked' ? 'active' : ''} unmarked" onclick="setMark('unmarked')">无标记</button>
+                    <button class="mark-btn ${currentQ.mark === 'uncertain' ? 'active' : ''} uncertain" onclick="setMark('uncertain')">不确定</button>
+                    <button class="mark-btn ${currentQ.mark === 'important' ? 'active' : ''} important" onclick="setMark('important')">重要</button>
+                    <button class="mark-btn ${currentQ.mark === 'difficult' ? 'active' : ''} difficult" onclick="setMark('difficult')">易错</button>
+                </div>
+            `;
+            
+            studyContent.innerHTML = `
+                <div class="study-card">
+                    <div class="question">${currentQ.question}</div>
+                    <div class="answer ${currentShowingAnswer ? 'show' : ''}" id="answerDiv">${currentQ.answer}</div>
+                </div>
+                ${markButtons}
+                <div class="controls">
+                    <button class="btn btn-primary" id="showAnswerBtn" onclick="toggleAnswer()">${currentShowingAnswer ? '隐藏答案' : '显示答案'}</button>
+                    <button class="btn btn-secondary" onclick="nextQuestion()">下一题 (${currentCurrentIndex + 1}/${currentQuestions.length})</button>
+                </div>
+            `;
+        }
+
+        // 切换答案显示
+        async function toggleAnswer() {
+            const answerDiv = document.getElementById('answerDiv');
+            const showAnswerBtn = document.getElementById('showAnswerBtn');
+            
+            if (showingAnswer) {
+                answerDiv.classList.remove('show');
+                showAnswerBtn.textContent = '显示答案';
+                showingAnswer = false;
+            } else {
+                answerDiv.classList.add('show');
+                showAnswerBtn.textContent = '隐藏答案';
+                showingAnswer = true;
+                
+                const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
+                const currentQ = currentQuestions[currentIndex];
+                if (!currentQ.studied) {
+                    currentQ.studied = true;
+                    await window.saveQuestionToCloud(currentQ, currentQ.order);
+                    updateStats();
+                }
+            }
+            
+            await window.saveProgressToCloud();
+        }
+
+        // 下一题
+        async function nextQuestion() {
+            const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
+            
+            if (currentIndex < currentQuestions.length - 1) {
+                currentIndex++;
+            } else {
+                currentIndex = 0;
+            }
+            
+            showingAnswer = false;
+            await window.saveProgressToCloud();
+            showQuestion();
+        }
+
+        // 设置题目标记
+        async function setMark(mark) {
+            const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
+            const currentQ = currentQuestions[currentIndex];
+            
+            if (!currentQ) return;
+            
+            const originalMark = currentQ.mark;
+            currentQ.mark = mark;
+            
+            if (studyMode === 'review') {
+                const originalQ = questions.find(q => q.id === currentQ.id);
+                if (originalQ) {
+                    originalQ.mark = mark;
+                }
+            }
+            
+            await window.saveQuestionToCloud(currentQ, currentQ.order);
+            updateStats();
+            
+            if (studyMode === 'review' && mark === 'unmarked' && originalMark !== 'unmarked') {
+                const currentReviewQuestions = [...reviewQuestions];
+                currentReviewQuestions.splice(currentIndex, 1);
+                window.reviewQuestions = currentReviewQuestions;
+                reviewQuestions = currentReviewQuestions;
+                
+                if (currentReviewQuestions.length === 0) {
+                    alert('🎉 复习完成！所有题目都已取消标记。');
+                    studyMode = 'normal';
+                    window.studyMode = 'normal';
+                    currentIndex = 0;
+                    window.currentIndex = 0;
+                    await window.saveProgressToCloud();
+                    showQuestion();
+                    return;
+                }
+                
+                if (currentIndex >= currentReviewQuestions.length) {
+                    currentIndex = 0;
+                    window.currentIndex = 0;
+                }
+                
+                showingAnswer = false;
+                window.showingAnswer = false;
+                await window.saveProgressToCloud();
+                
+                showQuestion();
+                return;
+            }
+            
+            document.querySelectorAll('.mark-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            const targetBtn = document.querySelector(`.mark-btn.${mark}`);
+            if (targetBtn) {
+                targetBtn.classList.add('active');
+            }
+        }
+
+        // 复习模式 - 切换筛选器
+        function toggleFilter(filter) {
+            const btn = event.target;
+            
+            if (!window.reviewFilters) window.reviewFilters = [];
+            
+            if (window.reviewFilters.includes(filter)) {
+                window.reviewFilters = window.reviewFilters.filter(f => f !== filter);
+                btn.classList.remove('selected');
+            } else {
+                window.reviewFilters.push(filter);
+                btn.classList.add('selected');
+            }
+            
+            reviewFilters = window.reviewFilters;
+            updateReviewStatus();
+        }
+
+        // 更新复习状态显示
+        function updateReviewStatus() {
+            if (!window.questions || !window.reviewFilters) return;
+            
+            const matchingCount = window.questions.filter(q => window.reviewFilters.includes(q.mark)).length;
+            const statusText = window.reviewFilters.length > 0 ? 
+                `已选择: ${window.reviewFilters.join('、')} (${matchingCount}道题目)` : 
+                '请选择要复习的标记类型，然后点击"开始复习"';
+            
+            const reviewStatusContent = document.getElementById('reviewStatusContent');
+            if (reviewStatusContent) {
+                reviewStatusContent.innerHTML = `
+                    <div class="no-data">
+                        <p>🔄 ${statusText}</p>
+                        <small style="color: #888; margin-top: 10px; display: block;">
+                            ${window.reviewFilters.length > 0 ? '点击"开始复习"开始学习' : '提示：需要先在学习模式中标记题目，才能在复习模式中看到'}
+                        </small>
+                    </div>
+                `;
+            }
+        }
+
+        // 更新复习筛选器显示
+        function updateReviewFiltersDisplay() {
+            if (!window.reviewFilters) window.reviewFilters = [];
+            
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                const filter = btn.textContent === '不确定' ? 'uncertain' : 
+                             btn.textContent === '重要' ? 'important' : 'difficult';
+                if (window.reviewFilters.includes(filter)) {
+                    btn.classList.add('selected');
+                } else {
+                    btn.classList.remove('selected');
+                }
+            });
+            
+            updateReviewStatus();
+        }
+
+        // 开始复习
+        async function startReview() {
+            if (!window.reviewFilters || window.reviewFilters.length === 0) {
+                alert('请先选择要复习的标记类型');
+                return;
+            }
+            
+            if (!window.questions || window.questions.length === 0) {
+                alert('还没有任何题目');
+                return;
+            }
+            
+            window.reviewQuestions = window.questions.filter(q => window.reviewFilters.includes(q.mark));
+            reviewQuestions = window.reviewQuestions;
+            
+            if (window.reviewQuestions.length === 0) {
+                const markCounts = {
+                    unmarked: window.questions.filter(q => q.mark === 'unmarked').length,
+                    uncertain: window.questions.filter(q => q.mark === 'uncertain').length,
+                    important: window.questions.filter(q => q.mark === 'important').length,
+                    difficult: window.questions.filter(q => q.mark === 'difficult').length
+                };
+                
+                alert(`没有找到标记为 ${window.reviewFilters.join('、')} 的题目。\n\n当前题目的标记情况：\n不确定: ${markCounts.uncertain}道\n重要: ${markCounts.important}道\n易错: ${markCounts.difficult}道\n无标记: ${markCounts.unmarked}道`);
+                return;
+            }
+            
+            studyMode = 'review';
+            currentIndex = 0;
+            showingAnswer = false;
+            
+            window.studyMode = 'review';
+            window.currentIndex = 0;
+            window.showingAnswer = false;
+            
+            await window.saveProgressToCloud();
+            
+            switchTab('study');
+            
+            setTimeout(() => {
+                showQuestion();
+            }, 100);
+            
+            alert(`开始复习！找到 ${window.reviewQuestions.length} 道符合条件的题目。`);
+        }
+
+        // 清空所有题目
+        async function clearAllQuestions() {
+            if (!window.currentLibraryId) {
+                alert('请先选择一个题库');
+                return;
+            }
+            
+            if (confirm('确定要清空当前题库的所有题目吗？此操作不可恢复。')) {
+                try {
+                    // 删除当前题库下的所有题目
+                    const questionsRef = collection(db, 'users', window.currentUser.uid, 'libraries', window.currentLibraryId, 'questions');
+                    const snapshot = await getDocs(questionsRef);
+                    
+                    const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+                    await Promise.all(deletePromises);
+                    
+                    currentIndex = 0;
+                    studyMode = 'normal';
+                    await window.saveProgressToCloud();
+                    
+                    alert('题目清空成功');
+                } catch (error) {
+                    alert('清空失败: ' + error.message);
+                }
+            }
+        }
+
+        // 导出题目
+        function exportQuestions() {
+            const currentQuestions = window.questions || [];
+            
+            if (currentQuestions.length === 0) {
+                alert('没有题目可以导出');
+                return;
+            }
+            
+            const currentLibrary = window.libraries?.find(lib => lib.id === window.currentLibraryId);
+            const libraryName = currentLibrary ? currentLibrary.name : '题库';
+            
+            let exportText = `题库：${libraryName}\n导出时间：${new Date().toLocaleString()}\n\n`;
+            currentQuestions.forEach((q, index) => {
+                exportText += `${index + 1}. ${q.question}\n`;
+                exportText += `答案：${q.answer}\n`;
+                if (q.mark !== 'unmarked') {
+                    const markText = {
+                        'uncertain': '不确定',
+                        'important': '重要',
+                        'difficult': '易错'
+                    }[q.mark];
+                    exportText += `标记：${markText}\n`;
+                }
+                exportText += '\n';
+            });
+            
+            const blob = new Blob([exportText], { type: 'text/plain;charset=utf-8' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${libraryName}_${new Date().toLocaleDateString().replace(/\//g, '-')}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            alert(`成功导出 ${currentQuestions.length} 道题目`);
+        }
+
+        // 更新统计信息
+        function updateStats() {
+            const currentQuestions = window.questions || [];
+            
+            const total = currentQuestions.length;
+            const studied = currentQuestions.filter(q => q.studied).length;
+            const marked = currentQuestions.filter(q => q.mark !== 'unmarked').length;
+            const progress = total > 0 ? Math.round((studied / total) * 100) : 0;
+            
+            document.getElementById('totalCount').textContent = total;
+            document.getElementById('studiedCount').textContent = studied;
+            document.getElementById('markedCount').textContent = marked;
+            document.getElementById('progressPercent').textContent = progress + '%';
+            document.getElementById('progressBar').style.width = progress + '%';
+        }
+
+        // 键盘快捷键
+        document.addEventListener('keydown', function(e) {
+            if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
+                return;
+            }
+            
+            switch(e.key) {
+                case ' ':
+                    e.preventDefault();
+                    if (document.getElementById('showAnswerBtn')) {
+                        toggleAnswer();
+                    }
+                    break;
+                case 'ArrowRight':
+                case 'Enter':
+                    e.preventDefault();
+                    nextQuestion();
+                    break;
+                case '1':
+                    setMark('unmarked');
+                    break;
+                case '2':
+                    setMark('uncertain');
+                    break;
+                case '3':
+                    setMark('important');
+                    break;
+                case '4':
+                    setMark('difficult');
+                    break;
+            }
+        });
+
+        // 点击弹窗外部关闭弹窗
+        window.onclick = function(event) {
+            const createModal = document.getElementById('createLibraryModal');
+            const manageModal = document.getElementById('manageLibrariesModal');
+            
+            if (event.target === createModal) {
+                closeCreateLibraryModal();
+            }
+            if (event.target === manageModal) {
+                closeManageLibrariesModal();
+            }
+        }
+
+        // 页面加载完成后的初始化
+        window.addEventListener('load', () => {
+            showNoLibrarySelected();
+        });
+    </script>
+</body>
+</html><!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -37,6 +1377,64 @@
         .header h1 {
             font-size: 2.5rem;
             margin-bottom: 20px;
+        }
+        
+        /* 题库选择器样式 */
+        .library-selector {
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+        }
+        
+        .library-selector-label {
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+            display: block;
+        }
+        
+        .library-selector-content {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .library-select {
+            flex: 1;
+            min-width: 200px;
+            padding: 8px 12px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.9);
+            color: #333;
+            font-size: 0.9rem;
+        }
+        
+        .library-select:focus {
+            outline: none;
+            border-color: rgba(255,255,255,0.8);
+        }
+        
+        .library-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .btn-library {
+            padding: 8px 12px;
+            border: 2px solid rgba(255,255,255,0.5);
+            border-radius: 6px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-library:hover {
+            background: rgba(255,255,255,0.2);
+            border-color: rgba(255,255,255,0.8);
         }
         
         .footer {
@@ -532,6 +1930,107 @@
             100% { transform: rotate(360deg); }
         }
         
+        /* 弹窗样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        
+        .modal-content {
+            background-color: white;
+            margin: 15% auto;
+            padding: 30px;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .modal-title {
+            font-size: 1.5rem;
+            color: #333;
+        }
+        
+        .close {
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        
+        .close:hover {
+            color: #333;
+        }
+        
+        .modal-body {
+            margin-bottom: 20px;
+        }
+        
+        .modal-footer {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        
+        /* 题库列表样式 */
+        .library-list {
+            margin-bottom: 20px;
+        }
+        
+        .library-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            background: white;
+        }
+        
+        .library-info {
+            flex: 1;
+        }
+        
+        .library-name {
+            font-weight: 500;
+            margin-bottom: 5px;
+        }
+        
+        .library-stats {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .library-actions-inline {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 0.8rem;
+            border-radius: 15px;
+        }
+        
+        .current-library {
+            border-color: #4facfe;
+            background: #f0f9ff;
+        }
+        
         @media (max-width: 768px) {
             .container {
                 margin: 0;
@@ -566,6 +2065,19 @@
             .footer .user-info {
                 flex-direction: column;
                 gap: 10px;
+            }
+            
+            .library-selector-content {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .library-select {
+                min-width: auto;
+            }
+            
+            .library-actions {
+                justify-content: center;
             }
         }
     </style>
@@ -620,6 +2132,20 @@
         <div id="mainApp" class="container" style="display: none;">
             <div class="header">
                 <h1>🎯 背题程序</h1>
+                
+                <!-- 题库选择器 -->
+                <div class="library-selector">
+                    <label class="library-selector-label">当前题库</label>
+                    <div class="library-selector-content">
+                        <select id="librarySelect" class="library-select" onchange="switchLibrary()">
+                            <option value="">选择题库...</option>
+                        </select>
+                        <div class="library-actions">
+                            <button class="btn-library" onclick="showCreateLibraryModal()">📚 新建</button>
+                            <button class="btn-library" onclick="showManageLibrariesModal()">⚙️ 管理</button>
+                        </div>
+                    </div>
+                </div>
             </div>
             
             <div class="content">
@@ -633,80 +2159,25 @@
                 <div id="studyTab" class="tab-content active">
                     <div id="studyContent">
                         <div class="no-data">
-                            <p>📚 还没有题目，请先在"题目管理"中添加题目</p>
+                            <p>📚 请先选择或创建一个题库</p>
                         </div>
                     </div>
                 </div>
                 
                 <!-- 题目管理 -->
                 <div id="manageTab" class="tab-content">
-                    <div class="import-section">
-                        <h3>📥 导入题目</h3>
-                        <div class="import-methods">
-                            <div class="import-method" onclick="showTextImport()">
-                                <h4>📝 文本导入</h4>
-                                <p>复制粘贴题目文本</p>
-                            </div>
-                            <div class="import-method" onclick="document.getElementById('fileInput').click()">
-                                <h4>📁 文件导入</h4>
-                                <p>选择txt文件</p>
-                            </div>
-                        </div>
-                        
-                        <div id="textImportArea" style="display: none;">
-                            <textarea id="importText" class="textarea-input" placeholder="请输入题目，支持以下格式：
-
-格式1（空行分隔）：
-这是第一道题目？
-这是第一道题的答案
-
-这是第二道题目？
-这是第二道题的答案
-
-格式2（标记符）：
-Q: 这是第一道题目？
-A: 这是第一道题的答案
-
-Q: 这是第二道题目？
-A: 这是第二道题的答案
-
-格式3（序号）：
-1. 这是第一道题目？
-答案：这是第一道题的答案
-
-2. 这是第二道题目？
-答案：这是第二道题的答案"></textarea>
-                            <div class="controls">
-                                <button class="btn btn-primary" onclick="importQuestions()">导入题目</button>
-                                <button class="btn btn-secondary" onclick="hideTextImport()">取消</button>
-                            </div>
-                        </div>
-                        
-                        <input type="file" id="fileInput" class="file-input" accept=".txt" onchange="importFromFile(event)">
-                    </div>
-                    
-                    <div>
-                        <h3>📋 题目列表 (<span id="questionCount">0</span>题)</h3>
-                        <div id="questionList" class="question-list"></div>
-                        <div class="controls">
-                            <button class="btn btn-primary" onclick="showTextImport()">📝 手动添加题目</button>
-                            <button class="btn btn-secondary" onclick="exportQuestions()">📤 导出题目</button>
-                            <button class="btn btn-secondary" onclick="clearAllQuestions()">🗑️ 清空所有题目</button>
+                    <div id="manageContent">
+                        <div class="no-data">
+                            <p>📚 请先选择或创建一个题库</p>
                         </div>
                     </div>
                 </div>
                 
                 <!-- 复习模式 -->
                 <div id="reviewTab" class="tab-content">
-                    <div class="review-filters">
-                        <button class="filter-btn uncertain" onclick="toggleFilter('uncertain')">不确定</button>
-                        <button class="filter-btn important" onclick="toggleFilter('important')">重要</button>
-                        <button class="filter-btn difficult" onclick="toggleFilter('difficult')">易错</button>
-                        <button class="btn btn-primary" onclick="startReview()">开始复习</button>
-                    </div>
                     <div id="reviewContent">
                         <div class="no-data">
-                            <p>🔄 请选择要复习的标记类型，然后点击"开始复习"</p>
+                            <p>📚 请先选择或创建一个题库</p>
                         </div>
                     </div>
                 </div>
@@ -746,6 +2217,48 @@ A: 这是第二道题的答案
         </div>
     </div>
 
+    <!-- 新建题库弹窗 -->
+    <div id="createLibraryModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">新建题库</h2>
+                <span class="close" onclick="closeCreateLibraryModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>题库名称</label>
+                    <input type="text" id="newLibraryName" class="form-input" placeholder="请输入题库名称">
+                </div>
+                <div class="form-group">
+                    <label>描述（可选）</label>
+                    <input type="text" id="newLibraryDescription" class="form-input" placeholder="请输入题库描述">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeCreateLibraryModal()">取消</button>
+                <button class="btn btn-primary" onclick="createLibrary()">创建</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 管理题库弹窗 -->
+    <div id="manageLibrariesModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">管理题库</h2>
+                <span class="close" onclick="closeManageLibrariesModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="librariesList" class="library-list">
+                    <!-- 题库列表将在这里动态生成 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeManageLibrariesModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Firebase SDK -->
     <script type="module">
         // Firebase 配置 - 需要替换为你的配置
@@ -781,6 +2294,11 @@ A: 这是第二道题的答案
         let currentUser = null;
         let unsubscribeQuestions = null;
         let unsubscribeProgress = null;
+        let unsubscribeLibraries = null;
+        
+        // 题库相关变量
+        let libraries = [];
+        let currentLibraryId = null;
 
         // 将 Firebase 相关函数暴露到全局
         window.firebaseAuth = {
@@ -791,928 +2309,4 @@ A: 这是第二道题的答案
         };
 
         // 监听登录状态
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                currentUser = user;
-                window.currentUser = user; // 暴露到全局
-                document.getElementById('userEmail').textContent = user.email;
-                showMainApp();
-                loadUserData();
-            } else {
-                currentUser = null;
-                window.currentUser = null; // 暴露到全局
-                showLoginScreen();
-                if (unsubscribeQuestions) unsubscribeQuestions();
-                if (unsubscribeProgress) unsubscribeProgress();
-            }
-        });
-
-        // Google 登录
-        async function loginWithGoogle() {
-            try {
-                setSyncStatus('syncing', '登录中...');
-                await signInWithPopup(auth, googleProvider);
-            } catch (error) {
-                console.error('Google登录失败:', error);
-                alert('登录失败: ' + error.message);
-                setSyncStatus('error', '登录失败');
-            }
-        }
-
-        // 邮箱登录
-        async function loginWithEmail() {
-            const email = document.getElementById('loginEmail').value;
-            const password = document.getElementById('loginPassword').value;
-            
-            if (!email || !password) {
-                alert('请输入邮箱和密码');
-                return;
-            }
-            
-            try {
-                setSyncStatus('syncing', '登录中...');
-                await signInWithEmailAndPassword(auth, email, password);
-            } catch (error) {
-                console.error('邮箱登录失败:', error);
-                alert('登录失败: ' + error.message);
-                setSyncStatus('error', '登录失败');
-            }
-        }
-
-        // 邮箱注册
-        async function registerWithEmail() {
-            const email = document.getElementById('loginEmail').value;
-            const password = document.getElementById('loginPassword').value;
-            
-            if (!email || !password) {
-                alert('请输入邮箱和密码');
-                return;
-            }
-            
-            if (password.length < 6) {
-                alert('密码至少需要6位');
-                return;
-            }
-            
-            try {
-                setSyncStatus('syncing', '注册中...');
-                await createUserWithEmailAndPassword(auth, email, password);
-                alert('注册成功！');
-            } catch (error) {
-                console.error('注册失败:', error);
-                alert('注册失败: ' + error.message);
-                setSyncStatus('error', '注册失败');
-            }
-        }
-
-        // 退出登录
-        async function logout() {
-            try {
-                await signOut(auth);
-                questions = [];
-                currentIndex = 0;
-                updateStats();
-            } catch (error) {
-                console.error('退出失败:', error);
-                alert('退出失败: ' + error.message);
-            }
-        }
-
-        // 显示不同界面
-        function showLoginScreen() {
-            document.getElementById('loginScreen').style.display = 'block';
-            document.getElementById('loadingScreen').style.display = 'none';
-            document.getElementById('mainApp').style.display = 'none';
-        }
-
-        function showLoadingScreen() {
-            document.getElementById('loginScreen').style.display = 'none';
-            document.getElementById('loadingScreen').style.display = 'block';
-            document.getElementById('mainApp').style.display = 'none';
-        }
-
-        function showMainApp() {
-            document.getElementById('loginScreen').style.display = 'none';
-            document.getElementById('loadingScreen').style.display = 'none';
-            document.getElementById('mainApp').style.display = 'block';
-        }
-
-        // 设置同步状态
-        function setSyncStatus(status, text) {
-            const indicator = document.getElementById('syncIndicator');
-            const syncText = document.getElementById('syncText');
-            
-            indicator.className = 'sync-indicator ' + status;
-            syncText.textContent = text;
-        }
-
-        // 加载用户数据
-        async function loadUserData() {
-            if (!currentUser) return;
-            
-            try {
-                setSyncStatus('syncing', '同步中...');
-                
-                // 实时监听题目数据
-                const questionsRef = collection(db, 'users', currentUser.uid, 'questions');
-                unsubscribeQuestions = onSnapshot(questionsRef, (snapshot) => {
-                    questions = [];
-                    snapshot.forEach((doc) => {
-                        questions.push({ id: doc.id, ...doc.data() });
-                    });
-                    questions.sort((a, b) => a.order - b.order);
-                    
-                    // 更新全局变量
-                    window.questions = questions;
-                    
-                    updateStats();
-                    displayQuestionList();
-                    
-                    // 只有在非复习模式，或者复习模式刚开始时才重新显示题目
-                    if (studyMode !== 'review') {
-                        if (questions.length > 0) {
-                            showQuestion();
-                        }
-                    } else {
-                        // 在复习模式中，只更新统计信息，不重新筛选题目
-                        console.log('复习模式中，跳过题目重新显示');
-                    }
-                    
-                    console.log('题目数据已更新:', questions.length, '道题目');
-                });
-                
-                // 监听学习进度
-                const progressRef = doc(db, 'users', currentUser.uid, 'settings', 'progress');
-                unsubscribeProgress = onSnapshot(progressRef, (doc) => {
-                    if (doc.exists()) {
-                        const progress = doc.data();
-                        currentIndex = progress.currentIndex || 0;
-                        studyMode = progress.studyMode || 'normal';
-                        reviewFilters = progress.reviewFilters || [];
-                        showingAnswer = progress.showingAnswer || false;
-                        
-                        if (studyMode === 'review' && reviewFilters.length > 0) {
-                            reviewQuestions = questions.filter(q => reviewFilters.includes(q.mark));
-                        }
-                        
-                        // 确保索引不越界
-                        const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
-                        if (currentIndex >= currentQuestions.length) {
-                            currentIndex = 0;
-                        }
-                        
-                        showQuestion();
-                    }
-                });
-                
-                setSyncStatus('synced', '已同步');
-                
-            } catch (error) {
-                console.error('加载数据失败:', error);
-                setSyncStatus('error', '同步失败');
-            }
-        }
-
-        // 保存题目到云端
-        async function saveQuestionToCloud(question, index) {
-            if (!currentUser) return;
-            
-            try {
-                const questionRef = doc(db, 'users', currentUser.uid, 'questions', question.id || `q_${Date.now()}_${index}`);
-                await setDoc(questionRef, {
-                    ...question,
-                    order: index,
-                    updatedAt: new Date()
-                });
-            } catch (error) {
-                console.error('保存题目失败:', error);
-                setSyncStatus('error', '保存失败');
-            }
-        }
-
-        // 保存进度到云端
-        async function saveProgressToCloud() {
-            if (!currentUser) return;
-            
-            try {
-                const progressRef = doc(db, 'users', currentUser.uid, 'settings', 'progress');
-                await setDoc(progressRef, {
-                    currentIndex,
-                    studyMode,
-                    reviewFilters,
-                    showingAnswer,
-                    updatedAt: new Date()
-                });
-            } catch (error) {
-                console.error('保存进度失败:', error);
-                setSyncStatus('error', '保存失败');
-            }
-        }
-
-        // 删除所有题目
-        async function deleteAllQuestions() {
-            if (!currentUser) return;
-            
-            try {
-                setSyncStatus('syncing', '删除中...');
-                const questionsRef = collection(db, 'users', currentUser.uid, 'questions');
-                const snapshot = await getDocs(questionsRef);
-                
-                const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
-                await Promise.all(deletePromises);
-                
-                setSyncStatus('synced', '已同步');
-            } catch (error) {
-                console.error('删除失败:', error);
-                setSyncStatus('error', '删除失败');
-            }
-        }
-
-        // 将变量暴露到全局作用域
-        window.loginWithGoogle = loginWithGoogle;
-        window.loginWithEmail = loginWithEmail;
-        window.registerWithEmail = registerWithEmail;
-        window.logout = logout;
-        window.saveQuestionToCloud = saveQuestionToCloud;
-        window.saveProgressToCloud = saveProgressToCloud;
-        window.deleteAllQuestions = deleteAllQuestions;
-        
-        // 暴露全局变量
-        window.questions = questions;
-        window.currentUser = currentUser;
-        window.currentIndex = currentIndex;
-        window.studyMode = studyMode;
-        window.reviewFilters = reviewFilters;
-        window.reviewQuestions = reviewQuestions;
-        
-        // 页面加载完成
-        window.addEventListener('load', () => {
-            showLoadingScreen();
-        });
-
-    </script>
-
-    <script>
-        // 切换标签页
-        function switchTab(tab) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            
-            // 找到对应的标签按钮并激活
-            const tabButton = document.querySelector(`.tab[onclick*="${tab}"]`);
-            if (tabButton) {
-                tabButton.classList.add('active');
-            }
-            
-            document.getElementById(tab + 'Tab').classList.add('active');
-            
-            if (tab === 'manage') {
-                displayQuestionList();
-            } else if (tab === 'review') {
-                updateReviewFiltersDisplay();
-            }
-        }
-
-        // 显示文本导入区域
-        function showTextImport() {
-            document.getElementById('textImportArea').style.display = 'block';
-        }
-
-        // 隐藏文本导入区域
-        function hideTextImport() {
-            document.getElementById('textImportArea').style.display = 'none';
-            document.getElementById('importText').value = '';
-        }
-
-        // 解析题目文本
-        function parseQuestions(text) {
-            const questions = [];
-            const lines = text.split('\n').map(line => line.trim()).filter(line => line);
-            
-            // 格式1: Q: A: 标记符格式
-            if (text.includes('Q:') && text.includes('A:')) {
-                let currentQ = '';
-                let currentA = '';
-                let isQuestion = false;
-                
-                for (let line of lines) {
-                    if (line.startsWith('Q:') || line.startsWith('问：')) {
-                        if (currentQ && currentA) {
-                            questions.push({
-                                id: `q_${Date.now()}_${questions.length}`,
-                                question: currentQ,
-                                answer: currentA,
-                                mark: 'unmarked',
-                                studied: false,
-                                order: questions.length
-                            });
-                        }
-                        currentQ = line.replace(/^(Q:|问：)/, '').trim();
-                        currentA = '';
-                        isQuestion = true;
-                    } else if (line.startsWith('A:') || line.startsWith('答：')) {
-                        currentA = line.replace(/^(A:|答：)/, '').trim();
-                        isQuestion = false;
-                    } else if (isQuestion) {
-                        currentQ += ' ' + line;
-                    } else {
-                        currentA += ' ' + line;
-                    }
-                }
-                
-                if (currentQ && currentA) {
-                    questions.push({
-                        id: `q_${Date.now()}_${questions.length}`,
-                        question: currentQ,
-                        answer: currentA,
-                        mark: 'unmarked',
-                        studied: false,
-                        order: questions.length
-                    });
-                }
-            }
-            // 格式2: 序号格式
-            else if (/^\d+\./.test(lines[0])) {
-                let currentQ = '';
-                let currentA = '';
-                
-                for (let line of lines) {
-                    if (/^\d+\./.test(line)) {
-                        if (currentQ && currentA) {
-                            questions.push({
-                                id: `q_${Date.now()}_${questions.length}`,
-                                question: currentQ,
-                                answer: currentA,
-                                mark: 'unmarked',
-                                studied: false,
-                                order: questions.length
-                            });
-                        }
-                        currentQ = line.replace(/^\d+\./, '').trim();
-                        currentA = '';
-                    } else if (line.startsWith('答案：') || line.startsWith('答：')) {
-                        currentA = line.replace(/^(答案：|答：)/, '').trim();
-                    } else if (currentQ && !currentA) {
-                        currentQ += ' ' + line;
-                    } else if (currentA) {
-                        currentA += ' ' + line;
-                    }
-                }
-                
-                if (currentQ && currentA) {
-                    questions.push({
-                        id: `q_${Date.now()}_${questions.length}`,
-                        question: currentQ,
-                        answer: currentA,
-                        mark: 'unmarked',
-                        studied: false,
-                        order: questions.length
-                    });
-                }
-            }
-            // 格式3: 空行分隔格式
-            else {
-                const allLines = text.split('\n').map(line => line.trim());
-                let i = 0;
-                
-                while (i < allLines.length) {
-                    if (allLines[i]) {
-                        const question = allLines[i];
-                        i++;
-                        
-                        while (i < allLines.length && !allLines[i]) {
-                            i++;
-                        }
-                        
-                        if (i < allLines.length && allLines[i]) {
-                            const answer = allLines[i];
-                            questions.push({
-                                id: `q_${Date.now()}_${questions.length}`,
-                                question: question,
-                                answer: answer,
-                                mark: 'unmarked',
-                                studied: false,
-                                order: questions.length
-                            });
-                        }
-                    }
-                    i++;
-                }
-            }
-            
-            return questions;
-        }
-
-        // 导入题目
-        async function importQuestions() {
-            // 检查用户是否登录
-            if (!window.currentUser) {
-                alert('请先登录再导入题目');
-                return;
-            }
-            
-            const text = document.getElementById('importText').value.trim();
-            if (!text) {
-                alert('请输入题目内容');
-                return;
-            }
-            
-            const newQuestions = parseQuestions(text);
-            if (newQuestions.length === 0) {
-                alert('未能解析出题目，请检查格式');
-                return;
-            }
-            
-            try {
-                // 确保questions数组已初始化
-                if (!window.questions) {
-                    window.questions = [];
-                }
-                
-                // 保存到云端
-                for (let i = 0; i < newQuestions.length; i++) {
-                    newQuestions[i].order = window.questions.length + i;
-                    await window.saveQuestionToCloud(newQuestions[i], window.questions.length + i);
-                }
-                
-                hideTextImport();
-                alert(`成功导入 ${newQuestions.length} 道题目`);
-                
-                // 如果是第一次导入，切换到学习模式
-                if (window.questions.length === 0) {
-                    setTimeout(() => {
-                        switchTab('study');
-                        document.querySelector('.tab').click();
-                    }, 1000);
-                }
-                
-            } catch (error) {
-                console.error('导入失败:', error);
-                alert('导入失败: ' + error.message);
-            }
-        }
-
-        // 从文件导入
-        function importFromFile(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                document.getElementById('importText').value = e.target.result;
-                showTextImport();
-            };
-            reader.readAsText(file);
-        }
-
-        // 显示题目列表
-        function displayQuestionList() {
-            const listElement = document.getElementById('questionList');
-            const countElement = document.getElementById('questionCount');
-            
-            const currentQuestions = window.questions || [];
-            
-            countElement.textContent = currentQuestions.length;
-            
-            if (currentQuestions.length === 0) {
-                listElement.innerHTML = '<div class="no-data">还没有题目</div>';
-                return;
-            }
-            
-            listElement.innerHTML = currentQuestions.map((q, index) => {
-                const markText = {
-                    'unmarked': '',
-                    'uncertain': '不确定',
-                    'important': '重要',
-                    'difficult': '易错'
-                }[q.mark];
-                
-                const markColor = {
-                    'unmarked': 'transparent',
-                    'uncertain': '#fbbf24',
-                    'important': '#ef4444',
-                    'difficult': '#8b5cf6'
-                }[q.mark];
-                
-                return `
-                    <div class="question-item">
-                        ${markText ? `<span class="question-mark" style="background-color: ${markColor}">${markText}</span>` : ''}
-                        <div class="question-text">${q.question}</div>
-                        <div class="answer-text">${q.answer}</div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        // 显示当前题目
-        function showQuestion() {
-            const studyContent = document.getElementById('studyContent');
-            
-            // 确保变量已初始化
-            if (!window.questions) window.questions = [];
-            if (!window.reviewQuestions) window.reviewQuestions = [];
-            if (typeof window.showingAnswer === 'undefined') window.showingAnswer = false;
-            
-            // 使用全局变量
-            const currentShowingAnswer = window.showingAnswer || showingAnswer || false;
-            const currentStudyMode = window.studyMode || studyMode || 'normal';
-            const currentCurrentIndex = window.currentIndex || currentIndex || 0;
-            
-            if (currentStudyMode === 'normal' && window.questions.length === 0) {
-                studyContent.innerHTML = '<div class="no-data">📚 还没有题目，请先在"题目管理"中添加题目</div>';
-                return;
-            }
-            
-            if (currentStudyMode === 'review' && window.reviewQuestions.length === 0) {
-                studyContent.innerHTML = '<div class="no-data">🎯 没有符合筛选条件的题目</div>';
-                return;
-            }
-            
-            const currentQuestions = currentStudyMode === 'review' ? window.reviewQuestions : window.questions;
-            const currentQ = currentQuestions[currentCurrentIndex];
-            
-            if (!currentQ) {
-                studyContent.innerHTML = '<div class="no-data">🎉 所有题目已完成！</div>';
-                return;
-            }
-            
-            const markButtons = `
-                <div class="mark-buttons">
-                    <button class="mark-btn ${currentQ.mark === 'unmarked' ? 'active' : ''} unmarked" onclick="setMark('unmarked')">无标记</button>
-                    <button class="mark-btn ${currentQ.mark === 'uncertain' ? 'active' : ''} uncertain" onclick="setMark('uncertain')">不确定</button>
-                    <button class="mark-btn ${currentQ.mark === 'important' ? 'active' : ''} important" onclick="setMark('important')">重要</button>
-                    <button class="mark-btn ${currentQ.mark === 'difficult' ? 'active' : ''} difficult" onclick="setMark('difficult')">易错</button>
-                </div>
-            `;
-            
-            studyContent.innerHTML = `
-                <div class="study-card">
-                    <div class="question">${currentQ.question}</div>
-                    <div class="answer ${currentShowingAnswer ? 'show' : ''}" id="answerDiv">${currentQ.answer}</div>
-                </div>
-                ${markButtons}
-                <div class="controls">
-                    <button class="btn btn-primary" id="showAnswerBtn" onclick="toggleAnswer()">${currentShowingAnswer ? '隐藏答案' : '显示答案'}</button>
-                    <button class="btn btn-secondary" onclick="nextQuestion()">下一题 (${currentCurrentIndex + 1}/${currentQuestions.length})</button>
-                </div>
-            `;
-            
-            console.log('题目显示完成:', {
-                studyMode: currentStudyMode,
-                currentIndex: currentCurrentIndex,
-                showingAnswer: currentShowingAnswer,
-                question: currentQ.question.substring(0, 50) + '...',
-                totalQuestions: currentQuestions.length
-            });
-        }
-
-        // 切换答案显示
-        async function toggleAnswer() {
-            const answerDiv = document.getElementById('answerDiv');
-            const showAnswerBtn = document.getElementById('showAnswerBtn');
-            
-            if (showingAnswer) {
-                answerDiv.classList.remove('show');
-                showAnswerBtn.textContent = '显示答案';
-                showingAnswer = false;
-            } else {
-                answerDiv.classList.add('show');
-                showAnswerBtn.textContent = '隐藏答案';
-                showingAnswer = true;
-                
-                // 标记为已学习
-                const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
-                const currentQ = currentQuestions[currentIndex];
-                if (!currentQ.studied) {
-                    currentQ.studied = true;
-                    await window.saveQuestionToCloud(currentQ, currentQ.order);
-                    updateStats();
-                }
-            }
-            
-            await window.saveProgressToCloud();
-        }
-
-        // 下一题
-        async function nextQuestion() {
-            const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
-            
-            if (currentIndex < currentQuestions.length - 1) {
-                currentIndex++;
-            } else {
-                currentIndex = 0;
-            }
-            
-            showingAnswer = false;
-            await window.saveProgressToCloud();
-            showQuestion();
-        }
-
-        // 设置题目标记
-        async function setMark(mark) {
-            const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
-            const currentQ = currentQuestions[currentIndex];
-            
-            if (!currentQ) return;
-            
-            console.log('设置标记:', currentQ.question.substring(0, 30), '标记为:', mark);
-            
-            const originalMark = currentQ.mark;
-            currentQ.mark = mark;
-            
-            // 如果在复习模式，同时更新原始数组中的题目
-            if (studyMode === 'review') {
-                const originalQ = questions.find(q => q.id === currentQ.id);
-                if (originalQ) {
-                    originalQ.mark = mark;
-                }
-            }
-            
-            await window.saveQuestionToCloud(currentQ, currentQ.order);
-            updateStats();
-            
-            // 如果在复习模式且设置为无标记，自动跳到下一题
-            if (studyMode === 'review' && mark === 'unmarked' && originalMark !== 'unmarked') {
-                // 从复习列表中移除这道题
-                const currentReviewQuestions = [...reviewQuestions];
-                currentReviewQuestions.splice(currentIndex, 1);
-                window.reviewQuestions = currentReviewQuestions;
-                reviewQuestions = currentReviewQuestions;
-                
-                // 如果没有更多题目，结束复习
-                if (currentReviewQuestions.length === 0) {
-                    alert('🎉 复习完成！所有题目都已取消标记。');
-                    studyMode = 'normal';
-                    window.studyMode = 'normal';
-                    currentIndex = 0;
-                    window.currentIndex = 0;
-                    await window.saveProgressToCloud();
-                    showQuestion();
-                    return;
-                }
-                
-                // 调整当前索引
-                if (currentIndex >= currentReviewQuestions.length) {
-                    currentIndex = 0;
-                    window.currentIndex = 0;
-                }
-                
-                showingAnswer = false;
-                window.showingAnswer = false;
-                await window.saveProgressToCloud();
-                
-                // 直接显示下一题，不触发数据同步
-                showQuestion();
-                return;
-            }
-            
-            // 更新标记按钮状态
-            document.querySelectorAll('.mark-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            const targetBtn = document.querySelector(`.mark-btn.${mark}`);
-            if (targetBtn) {
-                targetBtn.classList.add('active');
-            }
-        }
-
-        // 复习模式 - 切换筛选器
-        function toggleFilter(filter) {
-            const btn = event.target;
-            
-            // 确保 reviewFilters 数组存在
-            if (!window.reviewFilters) window.reviewFilters = [];
-            
-            console.log('切换筛选器:', filter, '当前筛选器:', window.reviewFilters);
-            
-            if (window.reviewFilters.includes(filter)) {
-                window.reviewFilters = window.reviewFilters.filter(f => f !== filter);
-                btn.classList.remove('selected');
-            } else {
-                window.reviewFilters.push(filter);
-                btn.classList.add('selected');
-            }
-            
-            // 更新全局变量
-            reviewFilters = window.reviewFilters;
-            
-            // 实时显示符合条件的题目数量
-            updateReviewStatus();
-            
-            console.log('筛选器已更新:', window.reviewFilters);
-        }
-
-        // 更新复习状态显示
-        function updateReviewStatus() {
-            if (!window.questions || !window.reviewFilters) return;
-            
-            const matchingCount = window.questions.filter(q => window.reviewFilters.includes(q.mark)).length;
-            const statusText = window.reviewFilters.length > 0 ? 
-                `已选择: ${window.reviewFilters.join('、')} (${matchingCount}道题目)` : 
-                '请选择要复习的标记类型，然后点击"开始复习"';
-            
-            document.getElementById('reviewContent').innerHTML = `
-                <div class="no-data">
-                    <p>🔄 ${statusText}</p>
-                    <small style="color: #888; margin-top: 10px; display: block;">
-                        ${window.reviewFilters.length > 0 ? '点击"开始复习"开始学习' : '提示：需要先在学习模式中标记题目，才能在复习模式中看到'}
-                    </small>
-                </div>
-            `;
-        }
-
-        // 更新复习筛选器显示
-        function updateReviewFiltersDisplay() {
-            if (!window.reviewFilters) window.reviewFilters = [];
-            
-            // 更新筛选按钮状态
-            document.querySelectorAll('.filter-btn').forEach(btn => {
-                const filter = btn.textContent === '不确定' ? 'uncertain' : 
-                             btn.textContent === '重要' ? 'important' : 'difficult';
-                if (window.reviewFilters.includes(filter)) {
-                    btn.classList.add('selected');
-                } else {
-                    btn.classList.remove('selected');
-                }
-            });
-            
-            updateReviewStatus();
-        }
-
-        // 开始复习
-        async function startReview() {
-            console.log('=== 开始复习 ===');
-            console.log('当前筛选器:', window.reviewFilters);
-            console.log('所有题目数量:', window.questions ? window.questions.length : 0);
-            
-            if (!window.reviewFilters || window.reviewFilters.length === 0) {
-                alert('请先选择要复习的标记类型');
-                return;
-            }
-            
-            if (!window.questions || window.questions.length === 0) {
-                alert('还没有任何题目');
-                return;
-            }
-            
-            // 筛选题目
-            window.reviewQuestions = window.questions.filter(q => window.reviewFilters.includes(q.mark));
-            reviewQuestions = window.reviewQuestions;
-            
-            console.log('筛选结果:', window.reviewQuestions.length, '道题目');
-            
-            if (window.reviewQuestions.length === 0) {
-                // 统计各种标记的数量
-                const markCounts = {
-                    unmarked: window.questions.filter(q => q.mark === 'unmarked').length,
-                    uncertain: window.questions.filter(q => q.mark === 'uncertain').length,
-                    important: window.questions.filter(q => q.mark === 'important').length,
-                    difficult: window.questions.filter(q => q.mark === 'difficult').length
-                };
-                
-                alert(`没有找到标记为 ${window.reviewFilters.join('、')} 的题目。\n\n当前题目的标记情况：\n不确定: ${markCounts.uncertain}道\n重要: ${markCounts.important}道\n易错: ${markCounts.difficult}道\n无标记: ${markCounts.unmarked}道`);
-                
-                document.getElementById('reviewContent').innerHTML = `
-                    <div class="no-data">
-                        🎯 没有符合筛选条件的题目<br>
-                        <small>当前标记统计：不确定 ${markCounts.uncertain}道，重要 ${markCounts.important}道，易错 ${markCounts.difficult}道</small><br>
-                        <small>请先在学习模式中标记一些题目</small>
-                    </div>
-                `;
-                return;
-            }
-            
-            // 设置复习模式
-            studyMode = 'review';
-            currentIndex = 0;
-            showingAnswer = false;
-            
-            // 同步到全局变量
-            window.studyMode = 'review';
-            window.currentIndex = 0;
-            window.showingAnswer = false;
-            
-            console.log('复习模式设置完成:', {
-                studyMode: window.studyMode,
-                currentIndex: window.currentIndex,
-                reviewQuestions: window.reviewQuestions.length
-            });
-            
-            await window.saveProgressToCloud();
-            
-            // 切换到学习标签页
-            switchTab('study');
-            
-            // 强制刷新显示
-            setTimeout(() => {
-                showQuestion();
-            }, 100);
-            
-            alert(`开始复习！找到 ${window.reviewQuestions.length} 道符合条件的题目。`);
-        }
-
-        // 清空所有题目
-        async function clearAllQuestions() {
-            if (confirm('确定要清空所有题目吗？此操作不可恢复。')) {
-                try {
-                    await window.deleteAllQuestions();
-                    currentIndex = 0;
-                    studyMode = 'normal';
-                    await window.saveProgressToCloud();
-                    updateStats();
-                    displayQuestionList();
-                    showQuestion();
-                } catch (error) {
-                    alert('清空失败: ' + error.message);
-                }
-            }
-        }
-
-        // 导出题目
-        function exportQuestions() {
-            const currentQuestions = window.questions || [];
-            
-            if (currentQuestions.length === 0) {
-                alert('没有题目可以导出');
-                return;
-            }
-            
-            let exportText = '';
-            currentQuestions.forEach((q, index) => {
-                exportText += `${index + 1}. ${q.question}\n`;
-                exportText += `答案：${q.answer}\n`;
-                if (q.mark !== 'unmarked') {
-                    const markText = {
-                        'uncertain': '不确定',
-                        'important': '重要',
-                        'difficult': '易错'
-                    }[q.mark];
-                    exportText += `标记：${markText}\n`;
-                }
-                exportText += '\n';
-            });
-            
-            const blob = new Blob([exportText], { type: 'text/plain;charset=utf-8' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = '背题程序导出_' + new Date().toLocaleDateString().replace(/\//g, '-') + '.txt';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
-            
-            alert(`成功导出 ${currentQuestions.length} 道题目`);
-        }
-
-        // 更新统计信息
-        function updateStats() {
-            const currentQuestions = window.questions || [];
-            
-            const total = currentQuestions.length;
-            const studied = currentQuestions.filter(q => q.studied).length;
-            const marked = currentQuestions.filter(q => q.mark !== 'unmarked').length;
-            const progress = total > 0 ? Math.round((studied / total) * 100) : 0;
-            
-            document.getElementById('totalCount').textContent = total;
-            document.getElementById('studiedCount').textContent = studied;
-            document.getElementById('markedCount').textContent = marked;
-            document.getElementById('progressPercent').textContent = progress + '%';
-            document.getElementById('progressBar').style.width = progress + '%';
-        }
-
-        // 键盘快捷键
-        document.addEventListener('keydown', function(e) {
-            if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
-                return;
-            }
-            
-            switch(e.key) {
-                case ' ':
-                    e.preventDefault();
-                    if (document.getElementById('showAnswerBtn')) {
-                        toggleAnswer();
-                    }
-                    break;
-                case 'ArrowRight':
-                case 'Enter':
-                    e.preventDefault();
-                    nextQuestion();
-                    break;
-                case '1':
-                    setMark('unmarked');
-                    break;
-                case '2':
-                    setMark('uncertain');
-                    break;
-                case '3':
-                    setMark('important');
-                    break;
-                case '4':
-                    setMark('difficult');
-                    break;
-            }
-        });
-    </script>
-</body>
-</html>
+        onAuthStateChanged(auth, (user)
