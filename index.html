@@ -924,13 +924,18 @@ A: 这是第二道题的答案
                     
                     // 更新全局变量
                     window.questions = questions;
-                    window.reviewFilters = reviewFilters;
-                    window.reviewQuestions = reviewQuestions;
                     
                     updateStats();
                     displayQuestionList();
-                    if (questions.length > 0) {
-                        showQuestion();
+                    
+                    // 只有在非复习模式，或者复习模式刚开始时才重新显示题目
+                    if (studyMode !== 'review') {
+                        if (questions.length > 0) {
+                            showQuestion();
+                        }
+                    } else {
+                        // 在复习模式中，只更新统计信息，不重新筛选题目
+                        console.log('复习模式中，跳过题目重新显示');
                     }
                     
                     console.log('题目数据已更新:', questions.length, '道题目');
@@ -1412,6 +1417,7 @@ A: 这是第二道题的答案
             
             console.log('设置标记:', currentQ.question.substring(0, 30), '标记为:', mark);
             
+            const originalMark = currentQ.mark;
             currentQ.mark = mark;
             
             // 如果在复习模式，同时更新原始数组中的题目
@@ -1424,6 +1430,41 @@ A: 这是第二道题的答案
             
             await window.saveQuestionToCloud(currentQ, currentQ.order);
             updateStats();
+            
+            // 如果在复习模式且设置为无标记，自动跳到下一题
+            if (studyMode === 'review' && mark === 'unmarked' && originalMark !== 'unmarked') {
+                // 从复习列表中移除这道题
+                const currentReviewQuestions = [...reviewQuestions];
+                currentReviewQuestions.splice(currentIndex, 1);
+                window.reviewQuestions = currentReviewQuestions;
+                reviewQuestions = currentReviewQuestions;
+                
+                // 如果没有更多题目，结束复习
+                if (currentReviewQuestions.length === 0) {
+                    alert('🎉 复习完成！所有题目都已取消标记。');
+                    studyMode = 'normal';
+                    window.studyMode = 'normal';
+                    currentIndex = 0;
+                    window.currentIndex = 0;
+                    await window.saveProgressToCloud();
+                    showQuestion();
+                    return;
+                }
+                
+                // 调整当前索引
+                if (currentIndex >= currentReviewQuestions.length) {
+                    currentIndex = 0;
+                    window.currentIndex = 0;
+                }
+                
+                showingAnswer = false;
+                window.showingAnswer = false;
+                await window.saveProgressToCloud();
+                
+                // 直接显示下一题，不触发数据同步
+                showQuestion();
+                return;
+            }
             
             // 更新标记按钮状态
             document.querySelectorAll('.mark-btn').forEach(btn => {
