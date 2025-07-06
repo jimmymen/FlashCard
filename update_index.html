@@ -971,6 +971,12 @@ A: 这是第二道题的答案
                         studyMode = progress.studyMode || 'normal';
                         showingAnswer = progress.showingAnswer || false;
                         
+                        console.log('从云端加载进度:', {
+                            studyMode: studyMode,
+                            currentIndex: currentIndex,
+                            showingAnswer: showingAnswer
+                        });
+                        
                         // 加载复习模式状态
                         if (progress.reviewMode) {
                             reviewMode = {
@@ -980,6 +986,11 @@ A: 这是第二道题的答案
                                 questionIds: progress.reviewMode.questionIds || []
                             };
                             
+                            // 同步到 window.reviewMode
+                            window.reviewMode = reviewMode;
+                            
+                            console.log('从云端加载复习模式状态:', reviewMode);
+                            
                             // 验证复习题库的有效性
                             if (reviewMode.isActive && reviewMode.questionIds.length > 0) {
                                 const validQuestionIds = reviewMode.questionIds.filter(id =>
@@ -987,10 +998,20 @@ A: 这是第二道题的答案
                                 );
                                 
                                 if (validQuestionIds.length !== reviewMode.questionIds.length) {
+                                    console.log('复习题库需要更新');
                                     // 复习题库已过期，重新筛选
                                     updateReviewQuestions();
                                 }
                             }
+                        } else {
+                            // 确保 reviewMode 被正确初始化
+                            reviewMode = {
+                                isActive: false,
+                                filters: [],
+                                currentIndex: 0,
+                                questionIds: []
+                            };
+                            window.reviewMode = reviewMode;
                         }
                         
                         // 确保索引不越界
@@ -999,11 +1020,18 @@ A: 这是第二道题的答案
                         if (currentIdx >= currentQuestions.length && currentQuestions.length > 0) {
                             if (studyMode === 'review' && reviewMode.isActive) {
                                 reviewMode.currentIndex = 0;
+                                window.reviewMode.currentIndex = 0;
                             } else {
                                 currentIndex = 0;
                             }
                         }
                         
+                        // 同步全局变量
+                        window.studyMode = studyMode;
+                        window.currentIndex = currentIndex;
+                        window.showingAnswer = showingAnswer;
+                        
+                        console.log('状态同步完成，准备显示题目');
                         showQuestion();
                     }
                 });
@@ -1558,8 +1586,13 @@ A: 这是第二道题的答案
 
         // 下一题
         async function nextQuestion() {
-            const currentQuestions = window.getCurrentQuestions();
-            const isReviewMode = studyMode === 'review' && window.reviewMode.isActive;
+            const isReviewMode = studyMode === 'review' && window.reviewMode && window.reviewMode.isActive;
+            
+            console.log('下一题 - 当前状态:', {
+                studyMode: studyMode,
+                isReviewMode: isReviewMode,
+                currentIndex: isReviewMode ? window.reviewMode.currentIndex : currentIndex
+            });
             
             if (isReviewMode) {
                 if (window.reviewMode.currentIndex < window.reviewMode.questionIds.length - 1) {
@@ -1567,12 +1600,15 @@ A: 这是第二道题的答案
                 } else {
                     window.reviewMode.currentIndex = 0; // 循环到第一题
                 }
+                console.log('复习模式下一题，新索引:', window.reviewMode.currentIndex);
             } else {
+                const currentQuestions = window.getCurrentQuestions();
                 if (currentIndex < currentQuestions.length - 1) {
                     currentIndex++;
                 } else {
                     currentIndex = 0;
                 }
+                console.log('普通模式下一题，新索引:', currentIndex);
             }
             
             showingAnswer = false;
@@ -1582,8 +1618,13 @@ A: 这是第二道题的答案
 
         // 上一题
         async function prevQuestion() {
-            const currentQuestions = window.getCurrentQuestions();
-            const isReviewMode = studyMode === 'review' && window.reviewMode.isActive;
+            const isReviewMode = studyMode === 'review' && window.reviewMode && window.reviewMode.isActive;
+            
+            console.log('上一题 - 当前状态:', {
+                studyMode: studyMode,
+                isReviewMode: isReviewMode,
+                currentIndex: isReviewMode ? window.reviewMode.currentIndex : currentIndex
+            });
             
             if (isReviewMode) {
                 if (window.reviewMode.currentIndex > 0) {
@@ -1591,12 +1632,15 @@ A: 这是第二道题的答案
                 } else {
                     window.reviewMode.currentIndex = window.reviewMode.questionIds.length - 1; // 循环到最后一题
                 }
+                console.log('复习模式上一题，新索引:', window.reviewMode.currentIndex);
             } else {
+                const currentQuestions = window.getCurrentQuestions();
                 if (currentIndex > 0) {
                     currentIndex--;
                 } else {
                     currentIndex = currentQuestions.length - 1;
                 }
+                console.log('普通模式上一题，新索引:', currentIndex);
             }
             
             showingAnswer = false;
@@ -1606,12 +1650,16 @@ A: 这是第二道题的答案
 
         // 设置题目标记
         async function setMark(mark) {
-            const isReviewMode = studyMode === 'review' && window.reviewMode.isActive;
+            const isReviewMode = studyMode === 'review' && window.reviewMode && window.reviewMode.isActive;
             const currentQ = window.getCurrentQuestion();
             
-            if (!currentQ) return;
+            console.log('设置标记:', {
+                mark: mark,
+                isReviewMode: isReviewMode,
+                question: currentQ ? currentQ.question.substring(0, 30) : 'null'
+            });
             
-            console.log('设置标记:', currentQ.question.substring(0, 30), '标记为:', mark);
+            if (!currentQ) return;
             
             currentQ.mark = mark;
             
@@ -1622,12 +1670,19 @@ A: 这是第二道题的答案
                 // 检查题目是否应该被移出复习题库
                 const shouldRemove = !window.reviewMode.filters.includes(mark);
                 
+                console.log('复习模式标记检查:', {
+                    shouldRemove: shouldRemove,
+                    filters: window.reviewMode.filters,
+                    newMark: mark
+                });
+                
                 if (shouldRemove) {
                     // 动态更新复习题库
                     const updated = window.updateReviewQuestions();
                     
                     if (updated) {
                         // 题库已更新，保存状态并刷新显示
+                        console.log('复习题库已更新，刷新显示');
                         await window.saveProgressToCloud();
                         showQuestion();
                         return;
