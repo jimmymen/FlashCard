@@ -254,21 +254,6 @@
             z-index: 1;
         }
         
-        /* 复习模式指示器 */
-        .review-mode-indicator {
-            background: #e6fffa;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            border-left: 4px solid #38b2ac;
-            color: #2d3748;
-        }
-        
-        .review-mode-indicator h4 {
-            margin-bottom: 5px;
-            color: #2c7a7b;
-        }
-        
         /* 学习模式样式 */
         .study-card {
             background: #f8f9fa;
@@ -314,7 +299,6 @@
             gap: 15px;
             justify-content: center;
             margin-top: 20px;
-            flex-wrap: wrap;
         }
         
         .btn {
@@ -354,7 +338,6 @@
             gap: 10px;
             justify-content: center;
             margin-top: 15px;
-            flex-wrap: wrap;
         }
         
         .mark-btn {
@@ -772,14 +755,14 @@ A: 这是第二道题的答案
 
         // ⚠️ 重要：这里需要替换为你的 Firebase 配置
         const firebaseConfig = {
-            apiKey: "AIzaSyDCKbNBGKJKNhfVH3_yNIUdUJDZJrOlhdU",
-            authDomain: "flashcard-f9207.firebaseapp.com",
-            databaseURL: "https://flashcard-f9207-default-rtdb.firebaseio.com",
-            projectId: "flashcard-f9207",
-            storageBucket: "flashcard-f9207.firebasestorage.app",
-            messagingSenderId: "434986412944",
-            appId: "1:434986412944:web:b2b2217ecedd81eabe2115",
-            measurementId: "G-616727LSE4"
+  apiKey: "AIzaSyDCKbNBGKJKNhfVH3_yNIUdUJDZJrOlhdU",
+  authDomain: "flashcard-f9207.firebaseapp.com",
+  databaseURL: "https://flashcard-f9207-default-rtdb.firebaseio.com",
+  projectId: "flashcard-f9207",
+  storageBucket: "flashcard-f9207.firebasestorage.app",
+  messagingSenderId: "434986412944",
+  appId: "1:434986412944:web:b2b2217ecedd81eabe2115",
+  measurementId: "G-616727LSE4"
         };
 
         // 初始化 Firebase
@@ -793,17 +776,11 @@ A: 这是第二道题的答案
         let currentIndex = 0;
         let showingAnswer = false;
         let studyMode = 'normal';
+        let reviewFilters = [];
+        let reviewQuestions = [];
         let currentUser = null;
         let unsubscribeQuestions = null;
         let unsubscribeProgress = null;
-
-        // 复习模式状态对象
-        let reviewMode = {
-            isActive: false,
-            filters: [],
-            currentIndex: 0,
-            questionIds: []
-        };
 
         // 将 Firebase 相关函数暴露到全局
         window.firebaseAuth = {
@@ -817,13 +794,13 @@ A: 这是第二道题的答案
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 currentUser = user;
-                window.currentUser = user;
+                window.currentUser = user; // 暴露到全局
                 document.getElementById('userEmail').textContent = user.email;
                 showMainApp();
                 loadUserData();
             } else {
                 currentUser = null;
-                window.currentUser = null;
+                window.currentUser = null; // 暴露到全局
                 showLoginScreen();
                 if (unsubscribeQuestions) unsubscribeQuestions();
                 if (unsubscribeProgress) unsubscribeProgress();
@@ -894,12 +871,6 @@ A: 这是第二道题的答案
                 await signOut(auth);
                 questions = [];
                 currentIndex = 0;
-                reviewMode = {
-                    isActive: false,
-                    filters: [],
-                    currentIndex: 0,
-                    questionIds: []
-                };
                 updateStats();
             } catch (error) {
                 console.error('退出失败:', error);
@@ -951,12 +922,20 @@ A: 这是第二道题的答案
                     });
                     questions.sort((a, b) => a.order - b.order);
                     
+                    // 更新全局变量
                     window.questions = questions;
                     
                     updateStats();
                     displayQuestionList();
-                    if (questions.length > 0) {
-                        showQuestion();
+                    
+                    // 只有在非复习模式，或者复习模式刚开始时才重新显示题目
+                    if (studyMode !== 'review') {
+                        if (questions.length > 0) {
+                            showQuestion();
+                        }
+                    } else {
+                        // 在复习模式中，只更新统计信息，不重新筛选题目
+                        console.log('复习模式中，跳过题目重新显示');
                     }
                     
                     console.log('题目数据已更新:', questions.length, '道题目');
@@ -969,69 +948,19 @@ A: 这是第二道题的答案
                         const progress = doc.data();
                         currentIndex = progress.currentIndex || 0;
                         studyMode = progress.studyMode || 'normal';
+                        reviewFilters = progress.reviewFilters || [];
                         showingAnswer = progress.showingAnswer || false;
                         
-                        console.log('从云端加载进度:', {
-                            studyMode: studyMode,
-                            currentIndex: currentIndex,
-                            showingAnswer: showingAnswer
-                        });
-                        
-                        // 加载复习模式状态
-                        if (progress.reviewMode) {
-                            reviewMode = {
-                                isActive: progress.reviewMode.isActive || false,
-                                filters: progress.reviewMode.filters || [],
-                                currentIndex: progress.reviewMode.currentIndex || 0,
-                                questionIds: progress.reviewMode.questionIds || []
-                            };
-                            
-                            // 同步到 window.reviewMode
-                            window.reviewMode = reviewMode;
-                            
-                            console.log('从云端加载复习模式状态:', reviewMode);
-                            
-                            // 验证复习题库的有效性
-                            if (reviewMode.isActive && reviewMode.questionIds.length > 0) {
-                                const validQuestionIds = reviewMode.questionIds.filter(id =>
-                                    questions.some(q => q.id === id && reviewMode.filters.includes(q.mark))
-                                );
-                                
-                                if (validQuestionIds.length !== reviewMode.questionIds.length) {
-                                    console.log('复习题库需要更新');
-                                    // 复习题库已过期，重新筛选
-                                    updateReviewQuestions();
-                                }
-                            }
-                        } else {
-                            // 确保 reviewMode 被正确初始化
-                            reviewMode = {
-                                isActive: false,
-                                filters: [],
-                                currentIndex: 0,
-                                questionIds: []
-                            };
-                            window.reviewMode = reviewMode;
+                        if (studyMode === 'review' && reviewFilters.length > 0) {
+                            reviewQuestions = questions.filter(q => reviewFilters.includes(q.mark));
                         }
                         
                         // 确保索引不越界
-                        const currentQuestions = getCurrentQuestions();
-                        const currentIdx = getCurrentIndex();
-                        if (currentIdx >= currentQuestions.length && currentQuestions.length > 0) {
-                            if (studyMode === 'review' && reviewMode.isActive) {
-                                reviewMode.currentIndex = 0;
-                                window.reviewMode.currentIndex = 0;
-                            } else {
-                                currentIndex = 0;
-                            }
+                        const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
+                        if (currentIndex >= currentQuestions.length) {
+                            currentIndex = 0;
                         }
                         
-                        // 同步全局变量
-                        window.studyMode = studyMode;
-                        window.currentIndex = currentIndex;
-                        window.showingAnswer = showingAnswer;
-                        
-                        console.log('状态同步完成，准备显示题目');
                         showQuestion();
                     }
                 });
@@ -1070,14 +999,8 @@ A: 这是第二道题的答案
                 await setDoc(progressRef, {
                     currentIndex,
                     studyMode,
+                    reviewFilters,
                     showingAnswer,
-                    reviewMode: {
-                        isActive: reviewMode.isActive,
-                        filters: reviewMode.filters,
-                        currentIndex: reviewMode.currentIndex,
-                        questionIds: reviewMode.questionIds,
-                        lastUpdated: new Date()
-                    },
                     updatedAt: new Date()
                 });
             } catch (error) {
@@ -1105,107 +1028,6 @@ A: 这是第二道题的答案
             }
         }
 
-        // 统一的题目获取函数
-        function getCurrentQuestion() {
-            console.log('获取当前题目 - 状态检查:', {
-                studyMode: studyMode,
-                reviewModeActive: window.reviewMode ? window.reviewMode.isActive : 'undefined',
-                reviewCurrentIndex: window.reviewMode ? window.reviewMode.currentIndex : 'undefined',
-                normalCurrentIndex: currentIndex
-            });
-            
-            if (studyMode === 'review' && window.reviewMode && window.reviewMode.isActive) {
-                const questionId = window.reviewMode.questionIds[window.reviewMode.currentIndex];
-                const question = questions.find(q => q.id === questionId);
-                console.log('复习模式 - 找到题目:', question ? question.question.substring(0, 30) : 'null');
-                return question;
-            } else {
-                const question = questions[currentIndex];
-                console.log('普通模式 - 找到题目:', question ? question.question.substring(0, 30) : 'null');
-                return question;
-            }
-        }
-
-        function getCurrentQuestions() {
-            if (studyMode === 'review' && window.reviewMode && window.reviewMode.isActive) {
-                const reviewQuestions = window.reviewMode.questionIds.map(id => 
-                    questions.find(q => q.id === id)
-                ).filter(Boolean);
-                console.log('复习模式题目列表:', reviewQuestions.length, '道题目');
-                return reviewQuestions;
-            } else {
-                console.log('普通模式题目列表:', questions.length, '道题目');
-                return questions;
-            }
-        }
-
-        function getCurrentIndex() {
-            const index = (studyMode === 'review' && window.reviewMode && window.reviewMode.isActive) ? 
-                   window.reviewMode.currentIndex : currentIndex;
-            console.log('当前索引:', index, '模式:', studyMode);
-            return index;
-        }
-
-        // 动态更新复习题库
-        function updateReviewQuestions() {
-            if (!reviewMode.isActive) return false;
-            
-            // 根据当前筛选条件重新筛选
-            const newFilteredQuestions = questions.filter(q => 
-                reviewMode.filters.includes(q.mark)
-            );
-            
-            const oldQuestionIds = reviewMode.questionIds;
-            const newQuestionIds = newFilteredQuestions.map(q => q.id);
-            
-            // 如果题库发生变化
-            if (JSON.stringify(oldQuestionIds) !== JSON.stringify(newQuestionIds)) {
-                const currentQuestionId = oldQuestionIds[reviewMode.currentIndex];
-                
-                // 更新题库
-                reviewMode.questionIds = newQuestionIds;
-                
-                // 重新计算当前题目位置
-                if (currentQuestionId && newQuestionIds.includes(currentQuestionId)) {
-                    // 当前题目仍在复习题库中，更新索引
-                    reviewMode.currentIndex = newQuestionIds.indexOf(currentQuestionId);
-                } else {
-                    // 当前题目已被移出复习题库，跳转到下一题
-                    if (reviewMode.currentIndex >= newQuestionIds.length) {
-                        reviewMode.currentIndex = newQuestionIds.length > 0 ? 0 : 0;
-                    }
-                }
-                
-                // 如果复习题库为空，结束复习模式
-                if (newQuestionIds.length === 0) {
-                    exitReviewMode();
-                    alert('🎉 恭喜！所有复习题目都已掌握！');
-                    return true;
-                }
-                
-                return true; // 表示题库已更新
-            }
-            
-            return false; // 题库未变化
-        }
-
-        // 复习模式退出逻辑
-        async function exitReviewMode() {
-            reviewMode = {
-                isActive: false,
-                filters: [],
-                currentIndex: 0,
-                questionIds: []
-            };
-            
-            studyMode = 'normal';
-            currentIndex = 0;
-            showingAnswer = false;
-            
-            await saveProgressToCloud();
-            showQuestion();
-        }
-
         // 将变量暴露到全局作用域
         window.loginWithGoogle = loginWithGoogle;
         window.loginWithEmail = loginWithEmail;
@@ -1214,18 +1036,14 @@ A: 这是第二道题的答案
         window.saveQuestionToCloud = saveQuestionToCloud;
         window.saveProgressToCloud = saveProgressToCloud;
         window.deleteAllQuestions = deleteAllQuestions;
-        window.getCurrentQuestion = getCurrentQuestion;
-        window.getCurrentQuestions = getCurrentQuestions;
-        window.getCurrentIndex = getCurrentIndex;
-        window.updateReviewQuestions = updateReviewQuestions;
-        window.exitReviewMode = exitReviewMode;
         
         // 暴露全局变量
         window.questions = questions;
         window.currentUser = currentUser;
         window.currentIndex = currentIndex;
         window.studyMode = studyMode;
-        window.reviewMode = reviewMode;
+        window.reviewFilters = reviewFilters;
+        window.reviewQuestions = reviewQuestions;
         
         // 页面加载完成
         window.addEventListener('load', () => {
@@ -1240,6 +1058,7 @@ A: 这是第二道题的答案
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             
+            // 找到对应的标签按钮并激活
             const tabButton = document.querySelector(`.tab[onclick*="${tab}"]`);
             if (tabButton) {
                 tabButton.classList.add('active');
@@ -1386,6 +1205,7 @@ A: 这是第二道题的答案
 
         // 导入题目
         async function importQuestions() {
+            // 检查用户是否登录
             if (!window.currentUser) {
                 alert('请先登录再导入题目');
                 return;
@@ -1404,10 +1224,12 @@ A: 这是第二道题的答案
             }
             
             try {
+                // 确保questions数组已初始化
                 if (!window.questions) {
                     window.questions = [];
                 }
                 
+                // 保存到云端
                 for (let i = 0; i < newQuestions.length; i++) {
                     newQuestions[i].order = window.questions.length + i;
                     await window.saveQuestionToCloud(newQuestions[i], window.questions.length + i);
@@ -1416,6 +1238,7 @@ A: 这是第二道题的答案
                 hideTextImport();
                 alert(`成功导入 ${newQuestions.length} 道题目`);
                 
+                // 如果是第一次导入，切换到学习模式
                 if (window.questions.length === 0) {
                     setTimeout(() => {
                         switchTab('study');
@@ -1485,42 +1308,33 @@ A: 这是第二道题的答案
         function showQuestion() {
             const studyContent = document.getElementById('studyContent');
             
-            // 使用全局的 studyMode 和 reviewMode 变量
-            const isReviewMode = studyMode === 'review' && window.reviewMode && window.reviewMode.isActive;
-            const currentQuestions = window.getCurrentQuestions();
-            const currentQ = window.getCurrentQuestion();
-            const currentIdx = window.getCurrentIndex();
+            // 确保变量已初始化
+            if (!window.questions) window.questions = [];
+            if (!window.reviewQuestions) window.reviewQuestions = [];
+            if (typeof window.showingAnswer === 'undefined') window.showingAnswer = false;
             
-            console.log('显示题目 - 当前状态:', {
-                studyMode: studyMode,
-                isReviewMode: isReviewMode,
-                reviewModeActive: window.reviewMode ? window.reviewMode.isActive : 'undefined',
-                questionsCount: currentQuestions ? currentQuestions.length : 0,
-                currentIndex: currentIdx
-            });
+            // 使用全局变量
+            const currentShowingAnswer = window.showingAnswer || showingAnswer || false;
+            const currentStudyMode = window.studyMode || studyMode || 'normal';
+            const currentCurrentIndex = window.currentIndex || currentIndex || 0;
             
-            if (!isReviewMode && (!currentQuestions || currentQuestions.length === 0)) {
+            if (currentStudyMode === 'normal' && window.questions.length === 0) {
                 studyContent.innerHTML = '<div class="no-data">📚 还没有题目，请先在"题目管理"中添加题目</div>';
                 return;
             }
             
-            if (isReviewMode && (!currentQuestions || currentQuestions.length === 0)) {
+            if (currentStudyMode === 'review' && window.reviewQuestions.length === 0) {
                 studyContent.innerHTML = '<div class="no-data">🎯 没有符合筛选条件的题目</div>';
                 return;
             }
+            
+            const currentQuestions = currentStudyMode === 'review' ? window.reviewQuestions : window.questions;
+            const currentQ = currentQuestions[currentCurrentIndex];
             
             if (!currentQ) {
                 studyContent.innerHTML = '<div class="no-data">🎉 所有题目已完成！</div>';
                 return;
             }
-            
-            // 复习模式指示器
-            const modeIndicator = isReviewMode ? `
-                <div class="review-mode-indicator">
-                    <h4>🔄 复习模式</h4>
-                    <p>正在复习：${window.reviewMode.filters.join('、')} (${currentQuestions.length}道题目)</p>
-                </div>
-            ` : '';
             
             const markButtons = `
                 <div class="mark-buttons">
@@ -1531,31 +1345,25 @@ A: 这是第二道题的答案
                 </div>
             `;
             
-            const controls = `
+            studyContent.innerHTML = `
+                <div class="study-card">
+                    <div class="question">${currentQ.question}</div>
+                    <div class="answer ${currentShowingAnswer ? 'show' : ''}" id="answerDiv">${currentQ.answer}</div>
+                </div>
+                ${markButtons}
                 <div class="controls">
-                    <button class="btn btn-secondary" onclick="prevQuestion()" 
-                            ${currentQuestions.length <= 1 ? 'disabled' : ''}>
-                        上一题
-                    </button>
-                    <button class="btn btn-primary" id="showAnswerBtn" onclick="toggleAnswer()">
-                        ${showingAnswer ? '隐藏答案' : '显示答案'}
-                    </button>
-                    <button class="btn btn-secondary" onclick="nextQuestion()">
-                        下一题 (${currentIdx + 1}/${currentQuestions.length})
-                    </button>
-                    ${isReviewMode ? '<button class="btn btn-secondary" onclick="exitReview()" style="margin-left: 10px;">退出复习</button>' : ''}
+                    <button class="btn btn-primary" id="showAnswerBtn" onclick="toggleAnswer()">${currentShowingAnswer ? '隐藏答案' : '显示答案'}</button>
+                    <button class="btn btn-secondary" onclick="nextQuestion()">下一题 (${currentCurrentIndex + 1}/${currentQuestions.length})</button>
                 </div>
             `;
             
-            studyContent.innerHTML = `
-                ${modeIndicator}
-                <div class="study-card">
-                    <div class="question">${currentQ.question}</div>
-                    <div class="answer ${showingAnswer ? 'show' : ''}" id="answerDiv">${currentQ.answer}</div>
-                </div>
-                ${markButtons}
-                ${controls}
-            `;
+            console.log('题目显示完成:', {
+                studyMode: currentStudyMode,
+                currentIndex: currentCurrentIndex,
+                showingAnswer: currentShowingAnswer,
+                question: currentQ.question.substring(0, 50) + '...',
+                totalQuestions: currentQuestions.length
+            });
         }
 
         // 切换答案显示
@@ -1573,8 +1381,9 @@ A: 这是第二道题的答案
                 showingAnswer = true;
                 
                 // 标记为已学习
-                const currentQ = window.getCurrentQuestion();
-                if (currentQ && !currentQ.studied) {
+                const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
+                const currentQ = currentQuestions[currentIndex];
+                if (!currentQ.studied) {
                     currentQ.studied = true;
                     await window.saveQuestionToCloud(currentQ, currentQ.order);
                     updateStats();
@@ -1586,61 +1395,12 @@ A: 这是第二道题的答案
 
         // 下一题
         async function nextQuestion() {
-            const isReviewMode = studyMode === 'review' && window.reviewMode && window.reviewMode.isActive;
+            const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
             
-            console.log('下一题 - 当前状态:', {
-                studyMode: studyMode,
-                isReviewMode: isReviewMode,
-                currentIndex: isReviewMode ? window.reviewMode.currentIndex : currentIndex
-            });
-            
-            if (isReviewMode) {
-                if (window.reviewMode.currentIndex < window.reviewMode.questionIds.length - 1) {
-                    window.reviewMode.currentIndex++;
-                } else {
-                    window.reviewMode.currentIndex = 0; // 循环到第一题
-                }
-                console.log('复习模式下一题，新索引:', window.reviewMode.currentIndex);
+            if (currentIndex < currentQuestions.length - 1) {
+                currentIndex++;
             } else {
-                const currentQuestions = window.getCurrentQuestions();
-                if (currentIndex < currentQuestions.length - 1) {
-                    currentIndex++;
-                } else {
-                    currentIndex = 0;
-                }
-                console.log('普通模式下一题，新索引:', currentIndex);
-            }
-            
-            showingAnswer = false;
-            await window.saveProgressToCloud();
-            showQuestion();
-        }
-
-        // 上一题
-        async function prevQuestion() {
-            const isReviewMode = studyMode === 'review' && window.reviewMode && window.reviewMode.isActive;
-            
-            console.log('上一题 - 当前状态:', {
-                studyMode: studyMode,
-                isReviewMode: isReviewMode,
-                currentIndex: isReviewMode ? window.reviewMode.currentIndex : currentIndex
-            });
-            
-            if (isReviewMode) {
-                if (window.reviewMode.currentIndex > 0) {
-                    window.reviewMode.currentIndex--;
-                } else {
-                    window.reviewMode.currentIndex = window.reviewMode.questionIds.length - 1; // 循环到最后一题
-                }
-                console.log('复习模式上一题，新索引:', window.reviewMode.currentIndex);
-            } else {
-                const currentQuestions = window.getCurrentQuestions();
-                if (currentIndex > 0) {
-                    currentIndex--;
-                } else {
-                    currentIndex = currentQuestions.length - 1;
-                }
-                console.log('普通模式上一题，新索引:', currentIndex);
+                currentIndex = 0;
             }
             
             showingAnswer = false;
@@ -1650,55 +1410,63 @@ A: 这是第二道题的答案
 
         // 设置题目标记
         async function setMark(mark) {
-            const isReviewMode = studyMode === 'review' && window.reviewMode && window.reviewMode.isActive;
-            const currentQ = window.getCurrentQuestion();
-            
-            console.log('设置标记:', {
-                mark: mark,
-                isReviewMode: isReviewMode,
-                question: currentQ ? currentQ.question.substring(0, 30) : 'null'
-            });
+            const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
+            const currentQ = currentQuestions[currentIndex];
             
             if (!currentQ) return;
             
+            console.log('设置标记:', currentQ.question.substring(0, 30), '标记为:', mark);
+            
+            const originalMark = currentQ.mark;
             currentQ.mark = mark;
             
-            // 保存到云端
-            await window.saveQuestionToCloud(currentQ, currentQ.order);
-            
-            if (isReviewMode) {
-                // 检查题目是否应该被移出复习题库
-                const shouldRemove = !window.reviewMode.filters.includes(mark);
-                
-                console.log('复习模式标记检查:', {
-                    shouldRemove: shouldRemove,
-                    filters: window.reviewMode.filters,
-                    newMark: mark
-                });
-                
-                if (shouldRemove) {
-                    // 动态更新复习题库
-                    const updated = window.updateReviewQuestions();
-                    
-                    if (updated) {
-                        // 题库已更新，保存状态并刷新显示
-                        console.log('复习题库已更新，刷新显示');
-                        await window.saveProgressToCloud();
-                        showQuestion();
-                        return;
-                    }
+            // 如果在复习模式，同时更新原始数组中的题目
+            if (studyMode === 'review') {
+                const originalQ = questions.find(q => q.id === currentQ.id);
+                if (originalQ) {
+                    originalQ.mark = mark;
                 }
             }
             
-            // 更新统计和显示
+            await window.saveQuestionToCloud(currentQ, currentQ.order);
             updateStats();
             
-            // 刷新当前题目的标记按钮状态
-            updateMarkButtonsDisplay(mark);
-        }
-
-        // 更新标记按钮显示
-        function updateMarkButtonsDisplay(mark) {
+            // 如果在复习模式且设置为无标记，自动跳到下一题
+            if (studyMode === 'review' && mark === 'unmarked' && originalMark !== 'unmarked') {
+                // 从复习列表中移除这道题
+                const currentReviewQuestions = [...reviewQuestions];
+                currentReviewQuestions.splice(currentIndex, 1);
+                window.reviewQuestions = currentReviewQuestions;
+                reviewQuestions = currentReviewQuestions;
+                
+                // 如果没有更多题目，结束复习
+                if (currentReviewQuestions.length === 0) {
+                    alert('🎉 复习完成！所有题目都已取消标记。');
+                    studyMode = 'normal';
+                    window.studyMode = 'normal';
+                    currentIndex = 0;
+                    window.currentIndex = 0;
+                    await window.saveProgressToCloud();
+                    showQuestion();
+                    return;
+                }
+                
+                // 调整当前索引
+                if (currentIndex >= currentReviewQuestions.length) {
+                    currentIndex = 0;
+                    window.currentIndex = 0;
+                }
+                
+                showingAnswer = false;
+                window.showingAnswer = false;
+                await window.saveProgressToCloud();
+                
+                // 直接显示下一题，不触发数据同步
+                showQuestion();
+                return;
+            }
+            
+            // 更新标记按钮状态
             document.querySelectorAll('.mark-btn').forEach(btn => {
                 btn.classList.remove('active');
             });
@@ -1712,40 +1480,42 @@ A: 这是第二道题的答案
         function toggleFilter(filter) {
             const btn = event.target;
             
-            if (!window.reviewMode) {
-                window.reviewMode = {
-                    isActive: false,
-                    filters: [],
-                    currentIndex: 0,
-                    questionIds: []
-                };
-            }
+            // 确保 reviewFilters 数组存在
+            if (!window.reviewFilters) window.reviewFilters = [];
             
-            if (window.reviewMode.filters.includes(filter)) {
-                window.reviewMode.filters = window.reviewMode.filters.filter(f => f !== filter);
+            console.log('切换筛选器:', filter, '当前筛选器:', window.reviewFilters);
+            
+            if (window.reviewFilters.includes(filter)) {
+                window.reviewFilters = window.reviewFilters.filter(f => f !== filter);
                 btn.classList.remove('selected');
             } else {
-                window.reviewMode.filters.push(filter);
+                window.reviewFilters.push(filter);
                 btn.classList.add('selected');
             }
             
+            // 更新全局变量
+            reviewFilters = window.reviewFilters;
+            
+            // 实时显示符合条件的题目数量
             updateReviewStatus();
+            
+            console.log('筛选器已更新:', window.reviewFilters);
         }
 
         // 更新复习状态显示
         function updateReviewStatus() {
-            if (!window.questions || !window.reviewMode.filters) return;
+            if (!window.questions || !window.reviewFilters) return;
             
-            const matchingCount = window.questions.filter(q => window.reviewMode.filters.includes(q.mark)).length;
-            const statusText = window.reviewMode.filters.length > 0 ? 
-                `已选择: ${window.reviewMode.filters.join('、')} (${matchingCount}道题目)` : 
+            const matchingCount = window.questions.filter(q => window.reviewFilters.includes(q.mark)).length;
+            const statusText = window.reviewFilters.length > 0 ? 
+                `已选择: ${window.reviewFilters.join('、')} (${matchingCount}道题目)` : 
                 '请选择要复习的标记类型，然后点击"开始复习"';
             
             document.getElementById('reviewContent').innerHTML = `
                 <div class="no-data">
                     <p>🔄 ${statusText}</p>
                     <small style="color: #888; margin-top: 10px; display: block;">
-                        ${window.reviewMode.filters.length > 0 ? '点击"开始复习"开始学习' : '提示：需要先在学习模式中标记题目，才能在复习模式中看到'}
+                        ${window.reviewFilters.length > 0 ? '点击"开始复习"开始学习' : '提示：需要先在学习模式中标记题目，才能在复习模式中看到'}
                     </small>
                 </div>
             `;
@@ -1753,12 +1523,13 @@ A: 这是第二道题的答案
 
         // 更新复习筛选器显示
         function updateReviewFiltersDisplay() {
-            if (!window.reviewMode.filters) window.reviewMode.filters = [];
+            if (!window.reviewFilters) window.reviewFilters = [];
             
+            // 更新筛选按钮状态
             document.querySelectorAll('.filter-btn').forEach(btn => {
                 const filter = btn.textContent === '不确定' ? 'uncertain' : 
                              btn.textContent === '重要' ? 'important' : 'difficult';
-                if (window.reviewMode.filters.includes(filter)) {
+                if (window.reviewFilters.includes(filter)) {
                     btn.classList.add('selected');
                 } else {
                     btn.classList.remove('selected');
@@ -1771,10 +1542,10 @@ A: 这是第二道题的答案
         // 开始复习
         async function startReview() {
             console.log('=== 开始复习 ===');
-            console.log('当前筛选器:', window.reviewMode.filters);
+            console.log('当前筛选器:', window.reviewFilters);
             console.log('所有题目数量:', window.questions ? window.questions.length : 0);
             
-            if (!window.reviewMode.filters || window.reviewMode.filters.length === 0) {
+            if (!window.reviewFilters || window.reviewFilters.length === 0) {
                 alert('请先选择要复习的标记类型');
                 return;
             }
@@ -1785,11 +1556,13 @@ A: 这是第二道题的答案
             }
             
             // 筛选题目
-            const filteredQuestions = window.questions.filter(q => window.reviewMode.filters.includes(q.mark));
+            window.reviewQuestions = window.questions.filter(q => window.reviewFilters.includes(q.mark));
+            reviewQuestions = window.reviewQuestions;
             
-            console.log('筛选结果:', filteredQuestions.length, '道题目');
+            console.log('筛选结果:', window.reviewQuestions.length, '道题目');
             
-            if (filteredQuestions.length === 0) {
+            if (window.reviewQuestions.length === 0) {
+                // 统计各种标记的数量
                 const markCounts = {
                     unmarked: window.questions.filter(q => q.mark === 'unmarked').length,
                     uncertain: window.questions.filter(q => q.mark === 'uncertain').length,
@@ -1797,7 +1570,7 @@ A: 这是第二道题的答案
                     difficult: window.questions.filter(q => q.mark === 'difficult').length
                 };
                 
-                alert(`没有找到标记为 ${window.reviewMode.filters.join('、')} 的题目。\n\n当前题目的标记情况：\n不确定: ${markCounts.uncertain}道\n重要: ${markCounts.important}道\n易错: ${markCounts.difficult}道\n无标记: ${markCounts.unmarked}道`);
+                alert(`没有找到标记为 ${window.reviewFilters.join('、')} 的题目。\n\n当前题目的标记情况：\n不确定: ${markCounts.uncertain}道\n重要: ${markCounts.important}道\n易错: ${markCounts.difficult}道\n无标记: ${markCounts.unmarked}道`);
                 
                 document.getElementById('reviewContent').innerHTML = `
                     <div class="no-data">
@@ -1809,39 +1582,33 @@ A: 这是第二道题的答案
                 return;
             }
             
-            // 设置复习模式状态
-            window.reviewMode.isActive = true;
-            window.reviewMode.currentIndex = 0;
-            window.reviewMode.questionIds = filteredQuestions.map(q => q.id);
-            
-            // 同步到全局变量
+            // 设置复习模式
             studyMode = 'review';
+            currentIndex = 0;
             showingAnswer = false;
             
+            // 同步到全局变量
+            window.studyMode = 'review';
+            window.currentIndex = 0;
+            window.showingAnswer = false;
+            
             console.log('复习模式设置完成:', {
-                studyMode: studyMode,
-                reviewModeActive: window.reviewMode.isActive,
-                reviewQuestionIds: window.reviewMode.questionIds.length,
-                reviewCurrentIndex: window.reviewMode.currentIndex
+                studyMode: window.studyMode,
+                currentIndex: window.currentIndex,
+                reviewQuestions: window.reviewQuestions.length
             });
             
-            // 保存状态到云端
             await window.saveProgressToCloud();
             
             // 切换到学习标签页
             switchTab('study');
             
-            // 立即刷新显示
-            showQuestion();
+            // 强制刷新显示
+            setTimeout(() => {
+                showQuestion();
+            }, 100);
             
-            alert(`开始复习！找到 ${filteredQuestions.length} 道符合条件的题目。`);
-        }
-
-        // 手动退出复习模式
-        async function exitReview() {
-            if (confirm('确定要退出复习模式吗？')) {
-                await window.exitReviewMode();
-            }
+            alert(`开始复习！找到 ${window.reviewQuestions.length} 道符合条件的题目。`);
         }
 
         // 清空所有题目
@@ -1851,12 +1618,6 @@ A: 这是第二道题的答案
                     await window.deleteAllQuestions();
                     currentIndex = 0;
                     studyMode = 'normal';
-                    window.reviewMode = {
-                        isActive: false,
-                        filters: [],
-                        currentIndex: 0,
-                        questionIds: []
-                    };
                     await window.saveProgressToCloud();
                     updateStats();
                     displayQuestionList();
@@ -1938,10 +1699,6 @@ A: 这是第二道题的答案
                     e.preventDefault();
                     nextQuestion();
                     break;
-                case 'ArrowLeft':
-                    e.preventDefault();
-                    prevQuestion();
-                    break;
                 case '1':
                     setMark('unmarked');
                     break;
@@ -1956,25 +1713,6 @@ A: 这是第二道题的答案
                     break;
             }
         });
-
-        // 初始化函数
-        function initializeApp() {
-            // 确保全局变量正确初始化
-            if (!window.reviewMode) {
-                window.reviewMode = {
-                    isActive: false,
-                    filters: [],
-                    currentIndex: 0,
-                    questionIds: []
-                };
-            }
-            
-            // 更新统计显示
-            updateStats();
-        }
-
-        // 页面加载完成后初始化
-        document.addEventListener('DOMContentLoaded', initializeApp);
     </script>
 </body>
 </html>
