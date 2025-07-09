@@ -299,8 +299,6 @@
             gap: 15px;
             justify-content: center;
             margin-top: 20px;
-            flex-wrap: wrap;
-            align-items: center;
         }
         
         .btn {
@@ -332,52 +330,6 @@
             opacity: 0.6;
             cursor: not-allowed;
             transform: none;
-        }
-        
-        /* 跳转控件样式 */
-        .jump-control {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background: rgba(255,255,255,0.8);
-            padding: 8px 12px;
-            border-radius: 20px;
-            border: 2px solid #e2e8f0;
-        }
-        
-        .jump-control label {
-            font-size: 0.9rem;
-            color: #666;
-            white-space: nowrap;
-        }
-        
-        .jump-input {
-            width: 60px;
-            padding: 6px 8px;
-            border: 1px solid #cbd5e0;
-            border-radius: 6px;
-            text-align: center;
-            font-size: 0.9rem;
-        }
-        
-        .jump-input:focus {
-            outline: none;
-            border-color: #4facfe;
-        }
-        
-        .jump-btn {
-            padding: 6px 12px;
-            background: #4facfe;
-            color: white;
-            border: none;
-            border-radius: 12px;
-            cursor: pointer;
-            font-size: 0.8rem;
-            transition: all 0.3s;
-        }
-        
-        .jump-btn:hover {
-            background: #3d8bfe;
         }
         
         /* 标记按钮 */
@@ -579,6 +531,49 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        /* 导航按钮样式 */
+        .navigation-controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 15px;
+        }
+
+        .nav-btn {
+            padding: 8px 16px;
+            border: 2px solid #4facfe;
+            border-radius: 20px;
+            background: white;
+            color: #4facfe;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .nav-btn:hover {
+            background: #4facfe;
+            color: white;
+        }
+
+        .nav-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* 快捷键提示 */
+        .keyboard-hints {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 0.8rem;
+            color: #666;
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 8px;
+        }
         
         @media (max-width: 768px) {
             .container {
@@ -610,16 +605,18 @@
             .mark-buttons {
                 flex-wrap: wrap;
             }
+
+            .navigation-controls {
+                flex-wrap: wrap;
+            }
             
             .footer .user-info {
                 flex-direction: column;
                 gap: 10px;
             }
-            
-            .jump-control {
-                order: -1;
-                width: 100%;
-                justify-content: center;
+
+            .keyboard-hints {
+                font-size: 0.7rem;
             }
         }
     </style>
@@ -1358,38 +1355,6 @@ A: 这是第二道题的答案
             }).join('');
         }
 
-        // 跳转到指定题目
-        async function jumpToQuestion() {
-            const jumpInput = document.getElementById('jumpInput');
-            const targetIndex = parseInt(jumpInput.value) - 1; // 转换为0基索引
-            
-            const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
-            
-            if (isNaN(targetIndex) || targetIndex < 0 || targetIndex >= currentQuestions.length) {
-                alert(`请输入1到${currentQuestions.length}之间的数字`);
-                jumpInput.value = '';
-                return;
-            }
-            
-            currentIndex = targetIndex;
-            showingAnswer = false;
-            
-            // 同步到全局变量
-            window.currentIndex = currentIndex;
-            window.showingAnswer = showingAnswer;
-            
-            await window.saveProgressToCloud();
-            showQuestion();
-            jumpInput.value = '';
-        }
-
-        // Enter键跳转
-        function handleJumpEnter(event) {
-            if (event.key === 'Enter') {
-                jumpToQuestion();
-            }
-        }
-
         // 显示当前题目
         function showQuestion() {
             const studyContent = document.getElementById('studyContent');
@@ -1421,13 +1386,34 @@ A: 这是第二道题的答案
                 studyContent.innerHTML = '<div class="no-data">🎉 所有题目已完成！</div>';
                 return;
             }
-
+            
             const markButtons = `
                 <div class="mark-buttons">
                     <button class="mark-btn ${currentQ.mark === 'unmarked' ? 'active' : ''} unmarked" onclick="setMark('unmarked')">无标记</button>
                     <button class="mark-btn ${currentQ.mark === 'uncertain' ? 'active' : ''} uncertain" onclick="setMark('uncertain')">不确定</button>
                     <button class="mark-btn ${currentQ.mark === 'important' ? 'active' : ''} important" onclick="setMark('important')">重要</button>
                     <button class="mark-btn ${currentQ.mark === 'difficult' ? 'active' : ''} difficult" onclick="setMark('difficult')">易错</button>
+                </div>
+            `;
+            
+            const navigationButtons = `
+                <div class="navigation-controls">
+                    <button class="nav-btn" onclick="previousQuestion()" ${currentCurrentIndex === 0 ? 'disabled' : ''}>
+                        ← 上一题
+                    </button>
+                    <button class="nav-btn" onclick="nextQuestion()" ${currentCurrentIndex === currentQuestions.length - 1 ? 'disabled' : ''}>
+                        下一题 →
+                    </button>
+                </div>
+            `;
+            
+            const keyboardHints = `
+                <div class="keyboard-hints">
+                    <strong>快捷键：</strong>
+                    空格键 = 显示/隐藏答案 | 
+                    ← → 方向键 = 上一题/下一题 | 
+                    Enter = 下一题 | 
+                    1234 = 标记题目
                 </div>
             `;
             
@@ -1439,15 +1425,10 @@ A: 这是第二道题的答案
                 ${markButtons}
                 <div class="controls">
                     <button class="btn btn-primary" id="showAnswerBtn" onclick="toggleAnswer()">${currentShowingAnswer ? '隐藏答案' : '显示答案'}</button>
-                    <button class="btn btn-secondary" onclick="nextQuestion()">下一题</button>
-                    <div class="jump-control">
-                        <label>跳转到第</label>
-                        <input type="number" id="jumpInput" class="jump-input" min="1" max="${currentQuestions.length}" 
-                               placeholder="${currentCurrentIndex + 1}" onkeypress="handleJumpEnter(event)">
-                        <label>题 (共${currentQuestions.length}题)</label>
-                        <button class="jump-btn" onclick="jumpToQuestion()">跳转</button>
-                    </div>
+                    <span style="margin: 0 10px; color: #666; font-size: 0.9rem;">${currentCurrentIndex + 1}/${currentQuestions.length}</span>
                 </div>
+                ${navigationButtons}
+                ${keyboardHints}
             `;
             
             console.log('题目显示完成:', {
@@ -1484,6 +1465,18 @@ A: 这是第二道题的答案
             }
             
             await window.saveProgressToCloud();
+        }
+
+        // 上一题
+        async function previousQuestion() {
+            const currentQuestions = studyMode === 'review' ? reviewQuestions : questions;
+            
+            if (currentIndex > 0) {
+                currentIndex--;
+                showingAnswer = false;
+                await window.saveProgressToCloud();
+                showQuestion();
+            }
         }
 
         // 下一题
@@ -1715,4 +1708,101 @@ A: 这是第二道题的答案
                     updateStats();
                     displayQuestionList();
                     showQuestion();
+                } catch (error) {
+                    alert('清空失败: ' + error.message);
                 }
+            }
+        }
+
+        // 导出题目
+        function exportQuestions() {
+            const currentQuestions = window.questions || [];
+            
+            if (currentQuestions.length === 0) {
+                alert('没有题目可以导出');
+                return;
+            }
+            
+            let exportText = '';
+            currentQuestions.forEach((q, index) => {
+                exportText += `${index + 1}. ${q.question}\n`;
+                exportText += `答案：${q.answer}\n`;
+                if (q.mark !== 'unmarked') {
+                    const markText = {
+                        'uncertain': '不确定',
+                        'important': '重要',
+                        'difficult': '易错'
+                    }[q.mark];
+                    exportText += `标记：${markText}\n`;
+                }
+                exportText += '\n';
+            });
+            
+            const blob = new Blob([exportText], { type: 'text/plain;charset=utf-8' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '背题程序导出_' + new Date().toLocaleDateString().replace(/\//g, '-') + '.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            alert(`成功导出 ${currentQuestions.length} 道题目`);
+        }
+
+        // 更新统计信息
+        function updateStats() {
+            const currentQuestions = window.questions || [];
+            
+            const total = currentQuestions.length;
+            const studied = currentQuestions.filter(q => q.studied).length;
+            const marked = currentQuestions.filter(q => q.mark !== 'unmarked').length;
+            const progress = total > 0 ? Math.round((studied / total) * 100) : 0;
+            
+            document.getElementById('totalCount').textContent = total;
+            document.getElementById('studiedCount').textContent = studied;
+            document.getElementById('markedCount').textContent = marked;
+            document.getElementById('progressPercent').textContent = progress + '%';
+            document.getElementById('progressBar').style.width = progress + '%';
+        }
+
+        // 键盘快捷键
+        document.addEventListener('keydown', function(e) {
+            if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
+                return;
+            }
+            
+            switch(e.key) {
+                case ' ':
+                    e.preventDefault();
+                    if (document.getElementById('showAnswerBtn')) {
+                        toggleAnswer();
+                    }
+                    break;
+                case 'ArrowRight':
+                case 'Enter':
+                    e.preventDefault();
+                    nextQuestion();
+                    break;
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    previousQuestion();
+                    break;
+                case '1':
+                    setMark('unmarked');
+                    break;
+                case '2':
+                    setMark('uncertain');
+                    break;
+                case '3':
+                    setMark('important');
+                    break;
+                case '4':
+                    setMark('difficult');
+                    break;
+            }
+        });
+    </script>
+</body>
+</html>
