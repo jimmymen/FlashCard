@@ -951,9 +951,6 @@ A: 这是第二道题的答案
             try {
                 setSyncStatus('syncing', '注册中...');
                 await createUserWithEmailAndPassword(auth, email, password);
-                alert('注册成功！');
-            } catch (error) {
-                console.error('注册失败:', error);
                 alert('注册失败: ' + error.message);
                 setSyncStatus('error', '注册失败');
             }
@@ -1213,6 +1210,308 @@ A: 这是第二道题的答案
     </script>
 
     <script>
+        // 智能解析题目文本
+        function parseQuestions(text) {
+            const questions = [];
+            const lines = text.split('\n').map(line => line.trim()).filter(line => line);
+            
+            // 检测格式类型
+            const formatType = detectFormat(text, lines);
+            console.log('检测到的格式类型:', formatType);
+            
+            switch (formatType) {
+                case 'qa_format':
+                    return parseQAFormat(lines);
+                case 'numbered_format':
+                    return parseNumberedFormat(lines);
+                case 'blank_separated':
+                    return parseBlankSeparated(text);
+                case 'mixed_format':
+                    return parseMixedFormat(lines);
+                default:
+                    return parseBlankSeparated(text); // 默认使用空行分隔
+            }
+        }
+
+        // 检测文本格式
+        function detectFormat(text, lines) {
+            let qaCount = 0;
+            let numberedCount = 0;
+            let answerKeywords = 0;
+            
+            for (let line of lines) {
+                if (/^(Q:|问：|题目：|Question:)/i.test(line)) qaCount++;
+                if (/^(A:|答：|答案：|Answer:)/i.test(line)) qaCount++;
+                if (/^\d+[\.、]/.test(line)) numberedCount++;
+                if (/(答案：|答：|解答：|回答：|Answer:)/i.test(line)) answerKeywords++;
+            }
+            
+            if (qaCount >= 4) return 'qa_format';
+            if (numberedCount >= 2 && answerKeywords >= 1) return 'numbered_format';
+            if (qaCount >= 2 || answerKeywords >= 2) return 'mixed_format';
+            return 'blank_separated';
+        }
+
+        // 解析 Q: A: 格式
+        function parseQAFormat(lines) {
+            const questions = [];
+            let currentQ = '';
+            let currentA = '';
+            let isQuestion = false;
+            
+            for (let line of lines) {
+                if (/^(Q:|问：|题目：|Question:)/i.test(line)) {
+                    if (currentQ && currentA) {
+                        questions.push(createQuestion(currentQ, currentA, questions.length));
+                    }
+                    currentQ = line.replace(/^(Q:|问：|题目：|Question:)/i, '').trim();
+                    currentA = '';
+                    isQuestion = true;
+                } else if (/^(A:|答：|答案：|Answer:)/i.test(line)) {
+                    currentA = line.replace(/^(A:|答：|答案：|Answer:)/i, '').trim();
+                    isQuestion = false;
+                } else if (isQuestion) {
+                    currentQ += (currentQ ? ' ' : '') + line;
+                } else if (currentA || !isQuestion) {
+                    currentA += (currentA ? ' ' : '') + line;
+                }
+            }
+            
+            if (currentQ && currentA) {
+                questions.push(createQuestion(currentQ, currentA, questions.length));
+            }
+            
+            return questions;
+        }
+
+        // 解析序号格式
+        function parseNumberedFormat(lines) {
+            const questions = [];
+            let currentQ = '';
+            let currentA = '';
+            let inAnswer = false;
+            
+            for (let line of lines) {
+                if (/^\d+[\.、]/.test(line)) {
+                    if (currentQ && currentA) {
+                        questions.push(createQuestion(currentQ, currentA, questions.length));
+                    }
+                    currentQ = line.replace(/^\d+[\.、]/, '').trim();
+                    currentA = '';
+                    inAnswer = false;
+                } else if (/(答案：|答：|解答：|Answer:)/i.test(line)) {
+                    currentA = line.replace(/(答案：|答：|解答：|Answer:)/i, '').trim();
+                    inAnswer = true;
+                } else if (inAnswer) {
+                    currentA += (currentA ? ' ' : '') + line;
+                } else if (currentQ) {
+                    currentQ += (currentQ ? ' ' : '') + line;
+                }
+            }
+            
+            if (currentQ && currentA) {
+                questions.push(createQuestion(currentQ, currentA, questions.length));
+            }
+            
+            return questions;
+        }
+
+        // 解析空行分隔格式（增强版）
+        function parseBlankSeparated(text) {
+            const questions = [];
+            const blocks = text.split(/\n\s*\n/).filter(block => block.trim());
+            
+            for (let block of blocks) {
+                const lines = block.split('\n').map(line => line.trim()).filter(line => line);
+                
+                if (lines.length >= 2) {
+                    // 寻找可能的问题和答案分界点
+                    let questionPart = '';
+                    let answerPart = '';
+                    let foundAnswer = false;
+                    
+                    for (let i = 0; i < lines.length; i++) {
+                        const line = lines[i];
+                        
+                        // 检查是否是答案开始的标志
+                        if (!foundAnswer && /(答案：|答：|解答：|Answer:)/i.test(line)) {
+                            answerPart = line.replace(/(答案：|答：|解答：|Answer:)/i, '').trim();
+                            foundAnswer = true;
+                        } else if (!foundAnswer && isLikelyAnswer(line, lines[i-1])) {
+                            // 智能判断这一行是否像答案
+                            answerPart = line;
+                            foundAnswer = true;
+                        } else if (foundAnswer) {
+                            answerPart += (answerPart ? ' ' : '') + line;
+                        } else {
+                            questionPart += (questionPart ? ' ' : '') + line;
+                        }
+                    }
+                    
+                    // 如果没有找到明确的答案标志，使用简单的分割策略
+                    if (!foundAnswer && lines.length >= 2) {
+                        if (lines.length === 2) {
+                            questionPart = lines[0];
+                            answerPart = lines[1];
+                        } else {
+                            // 多行的情况下，尝试智能分割
+                            const midPoint = Math.floor(lines.length / 2);
+                            questionPart = lines.slice(0, midPoint).join(' ');
+                            answerPart = lines.slice(midPoint).join(' ');
+                        }
+                    }
+                    
+                    if (questionPart && answerPart) {
+                        questions.push(createQuestion(questionPart, answerPart, questions.length));
+                    }
+                }
+            }
+            
+            return questions;
+        }
+
+        // 解析混合格式
+        function parseMixedFormat(lines) {
+            const questions = [];
+            let i = 0;
+            
+            while (i < lines.length) {
+                let currentQ = '';
+                let currentA = '';
+                
+                // 寻找问题开始
+                while (i < lines.length && !currentQ) {
+                    const line = lines[i];
+                    if (/^(Q:|问：|题目：|\d+[\.、])/i.test(line) || isLikelyQuestion(line)) {
+                        currentQ = line.replace(/^(Q:|问：|题目：|\d+[\.、])/i, '').trim();
+                        i++;
+                        break;
+                    }
+                    i++;
+                }
+                
+                // 收集问题的后续行
+                while (i < lines.length && currentQ && !currentA) {
+                    const line = lines[i];
+                    if (/^(A:|答：|答案：)/i.test(line) || isLikelyAnswer(line, currentQ)) {
+                        currentA = line.replace(/^(A:|答：|答案：)/i, '').trim();
+                        i++;
+                        break;
+                    } else if (!/^(Q:|问：|题目：|\d+[\.、])/i.test(line)) {
+                        currentQ += ' ' + line;
+                    } else {
+                        break;
+                    }
+                    i++;
+                }
+                
+                // 收集答案的后续行
+                while (i < lines.length && currentA) {
+                    const line = lines[i];
+                    if (/^(Q:|问：|题目：|\d+[\.、])/i.test(line)) {
+                        break;
+                    }
+                    currentA += ' ' + line;
+                    i++;
+                }
+                
+                if (currentQ && currentA) {
+                    questions.push(createQuestion(currentQ, currentA, questions.length));
+                }
+            }
+            
+            return questions;
+        }
+
+        // 智能判断一行是否像问题
+        function isLikelyQuestion(line) {
+            const questionIndicators = [
+                /[？?]$/, // 以问号结尾
+                /^(什么|怎么|如何|为什么|哪个|哪些|谁|何时|何地|Which|What|How|Why|Who|When|Where)/i,
+                /请(简述|说明|解释|分析|计算|回答)/i,
+                /(简述|说明|解释|分析|计算).*[是吗？?]/i
+            ];
+            
+            return questionIndicators.some(pattern => pattern.test(line));
+        }
+
+        // 智能判断一行是否像答案
+        function isLikelyAnswer(line, prevLine) {
+            if (!prevLine) return false;
+            
+            const answerIndicators = [
+                /^(是|对|错|正确|不正确|A|B|C|D)[\.、\s]/i,
+                /^(因为|由于|根据|基于)/i,
+                /[。.]$/ // 以句号结尾且前一行以问号结尾
+            ];
+            
+            const prevIsQuestion = /[？?]$/.test(prevLine);
+            const lineEndsWithPeriod = /[。.]$/.test(line);
+            
+            return prevIsQuestion && (lineEndsWithPeriod || answerIndicators.some(pattern => pattern.test(line)));
+        }
+
+        // 创建题目对象
+        function createQuestion(question, answer, index) {
+            return {
+                id: `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                question: question.trim(),
+                answer: answer.trim(),
+                mark: 'unmarked',
+                studied: false,
+                order: index
+            };
+        }
+
+        // 显示解析预览
+        function showParsePreview(questions) {
+            if (questions.length === 0) {
+                alert('未能解析出题目，请检查格式或使用手动修正功能');
+                return false;
+            }
+            
+            const previewHtml = questions.slice(0, 5).map((q, i) => `
+                <div style="border: 1px solid #ddd; padding: 10px; margin: 5px 0; border-radius: 5px;">
+                    <strong>题目 ${i + 1}:</strong> ${q.question}<br>
+                    <strong>答案:</strong> ${q.answer}
+                </div>
+            `).join('');
+            
+            // 显示预览弹窗
+            showPreviewDialog(questions, previewHtml);
+            
+            return true;
+        }
+
+        // 显示预览对话框
+        function showPreviewDialog(questions, previewHtml) {
+            const dialog = document.createElement('div');
+            dialog.style.cssText = `
+                position: fixed; top: 0; left: 0; right: 0; bottom: 0; 
+                background: rgba(0,0,0,0.5); z-index: 1000; 
+                display: flex; justify-content: center; align-items: center;
+            `;
+            
+            dialog.innerHTML = `
+                <div style="background: white; padding: 20px; border-radius: 10px; max-width: 80%; max-height: 80%; overflow-y: auto;">
+                    <h3>题目解析预览 (共${questions.length}题)</h3>
+                    <div style="margin: 15px 0; max-height: 300px; overflow-y: auto;">
+                        ${previewHtml}
+                        ${questions.length > 5 ? '<p style="text-align: center; color: #666;">... 还有' + (questions.length - 5) + '道题目</p>' : ''}
+                    </div>
+                    <div style="text-align: center; margin-top: 20px;">
+                        <button onclick="confirmImport()" style="background: #4facfe; color: white; border: none; padding: 10px 20px; border-radius: 5px; margin: 0 10px; cursor: pointer;">确认导入</button>
+                        <button onclick="showManualEdit()" style="background: #f59e0b; color: white; border: none; padding: 10px 20px; border-radius: 5px; margin: 0 10px; cursor: pointer;">手动修正</button>
+                        <button onclick="closePreview()" style="background: #6b7280; color: white; border: none; padding: 10px 20px; border-radius: 5px; margin: 0 10px; cursor: pointer;">取消</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(dialog);
+            window.currentPreviewDialog = dialog;
+            window.currentParsedQuestions = questions;
+        }
+
         // 切换标签页
         function switchTab(tab) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -1243,126 +1542,7 @@ A: 这是第二道题的答案
             document.getElementById('importText').value = '';
         }
 
-        // 解析题目文本
-        function parseQuestions(text) {
-            const questions = [];
-            const lines = text.split('\n').map(line => line.trim()).filter(line => line);
-            
-            // 格式1: Q: A: 标记符格式
-            if (text.includes('Q:') && text.includes('A:')) {
-                let currentQ = '';
-                let currentA = '';
-                let isQuestion = false;
-                
-                for (let line of lines) {
-                    if (line.startsWith('Q:') || line.startsWith('问：')) {
-                        if (currentQ && currentA) {
-                            questions.push({
-                                id: `q_${Date.now()}_${questions.length}`,
-                                question: currentQ,
-                                answer: currentA,
-                                mark: 'unmarked',
-                                studied: false,
-                                order: questions.length
-                            });
-                        }
-                        currentQ = line.replace(/^(Q:|问：)/, '').trim();
-                        currentA = '';
-                        isQuestion = true;
-                    } else if (line.startsWith('A:') || line.startsWith('答：')) {
-                        currentA = line.replace(/^(A:|答：)/, '').trim();
-                        isQuestion = false;
-                    } else if (isQuestion) {
-                        currentQ += ' ' + line;
-                    } else {
-                        currentA += ' ' + line;
-                    }
-                }
-                
-                if (currentQ && currentA) {
-                    questions.push({
-                        id: `q_${Date.now()}_${questions.length}`,
-                        question: currentQ,
-                        answer: currentA,
-                        mark: 'unmarked',
-                        studied: false,
-                        order: questions.length
-                    });
-                }
-            }
-            // 格式2: 序号格式
-            else if (/^\d+\./.test(lines[0])) {
-                let currentQ = '';
-                let currentA = '';
-                
-                for (let line of lines) {
-                    if (/^\d+\./.test(line)) {
-                        if (currentQ && currentA) {
-                            questions.push({
-                                id: `q_${Date.now()}_${questions.length}`,
-                                question: currentQ,
-                                answer: currentA,
-                                mark: 'unmarked',
-                                studied: false,
-                                order: questions.length
-                            });
-                        }
-                        currentQ = line.replace(/^\d+\./, '').trim();
-                        currentA = '';
-                    } else if (line.startsWith('答案：') || line.startsWith('答：')) {
-                        currentA = line.replace(/^(答案：|答：)/, '').trim();
-                    } else if (currentQ && !currentA) {
-                        currentQ += ' ' + line;
-                    } else if (currentA) {
-                        currentA += ' ' + line;
-                    }
-                }
-                
-                if (currentQ && currentA) {
-                    questions.push({
-                        id: `q_${Date.now()}_${questions.length}`,
-                        question: currentQ,
-                        answer: currentA,
-                        mark: 'unmarked',
-                        studied: false,
-                        order: questions.length
-                    });
-                }
-            }
-            // 格式3: 空行分隔格式
-            else {
-                const allLines = text.split('\n').map(line => line.trim());
-                let i = 0;
-                
-                while (i < allLines.length) {
-                    if (allLines[i]) {
-                        const question = allLines[i];
-                        i++;
-                        
-                        while (i < allLines.length && !allLines[i]) {
-                            i++;
-                        }
-                        
-                        if (i < allLines.length && allLines[i]) {
-                            const answer = allLines[i];
-                            questions.push({
-                                id: `q_${Date.now()}_${questions.length}`,
-                                question: question,
-                                answer: answer,
-                                mark: 'unmarked',
-                                studied: false,
-                                order: questions.length
-                            });
-                        }
-                    }
-                    i++;
-                }
-            }
-            
-            return questions;
-        }
-
-        // 导入题目
+        // 导入题目（更新版）
         async function importQuestions() {
             if (!window.AppState.currentUser) {
                 alert('请先登录再导入题目');
@@ -1376,33 +1556,157 @@ A: 这是第二道题的答案
             }
             
             const newQuestions = parseQuestions(text);
-            if (newQuestions.length === 0) {
-                alert('未能解析出题目，请检查格式');
+            
+            // 显示解析预览
+            if (!showParsePreview(newQuestions)) {
                 return;
             }
+        }
+
+        // 确认导入
+        window.confirmImport = async function() {
+            const questions = window.currentParsedQuestions;
+            if (!questions) return;
             
             try {
-                // 保存到云端
-                for (let i = 0; i < newQuestions.length; i++) {
-                    newQuestions[i].order = window.AppState.questions.length + i;
-                    await window.saveQuestionToCloud(newQuestions[i], window.AppState.questions.length + i);
+                for (let i = 0; i < questions.length; i++) {
+                    questions[i].order = window.AppState.questions.length + i;
+                    await window.saveQuestionToCloud(questions[i], window.AppState.questions.length + i);
                 }
                 
+                closePreview();
                 hideTextImport();
-                alert(`成功导入 ${newQuestions.length} 道题目`);
+                alert(`成功导入 ${questions.length} 道题目`);
                 
-                // 如果是第一次导入，切换到学习模式
                 if (window.AppState.questions.length === 0) {
                     setTimeout(() => {
                         switchTab('study');
                     }, 1000);
                 }
-                
             } catch (error) {
-                console.error('导入失败:', error);
                 alert('导入失败: ' + error.message);
             }
-        }
+        };
+
+        // 显示手动编辑界面
+        window.showManualEdit = function() {
+            const questions = window.currentParsedQuestions;
+            if (!questions) return;
+            
+            closePreview();
+            
+            const editDialog = document.createElement('div');
+            editDialog.style.cssText = `
+                position: fixed; top: 0; left: 0; right: 0; bottom: 0; 
+                background: rgba(0,0,0,0.5); z-index: 1000; 
+                display: flex; justify-content: center; align-items: center;
+            `;
+            
+            const editHtml = questions.map((q, i) => `
+                <div style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 8px; background: #f9f9f9;">
+                    <h4>题目 ${i + 1}</h4>
+                    <label style="display: block; margin: 5px 0; font-weight: 500;">问题：</label>
+                    <input type="text" id="editQ_${i}" value="${q.question}" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 10px;">
+                    <label style="display: block; margin: 5px 0; font-weight: 500;">答案：</label>
+                    <input type="text" id="editA_${i}" value="${q.answer}" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                    <button onclick="deleteQuestion(${i})" style="background: #ef4444; color: white; border: none; padding: 5px 10px; border-radius: 4px; margin-top: 5px; cursor: pointer; font-size: 12px;">删除此题</button>
+                </div>
+            `).join('');
+            
+            editDialog.innerHTML = `
+                <div style="background: white; padding: 20px; border-radius: 10px; max-width: 90%; max-height: 90%; overflow-y: auto; width: 800px;">
+                    <h3>手动修正题目 (共${questions.length}题)</h3>
+                    <p style="color: #666; margin-bottom: 15px;">请检查并修正题目和答案，确保内容正确</p>
+                    <div style="max-height: 500px; overflow-y: auto;">
+                        ${editHtml}
+                    </div>
+                    <div style="text-align: center; margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee;">
+                        <button onclick="saveEditedQuestions()" style="background: #4facfe; color: white; border: none; padding: 12px 24px; border-radius: 5px; margin: 0 10px; cursor: pointer; font-weight: 500;">保存并导入</button>
+                        <button onclick="addNewQuestion()" style="background: #10b981; color: white; border: none; padding: 12px 24px; border-radius: 5px; margin: 0 10px; cursor: pointer; font-weight: 500;">添加新题目</button>
+                        <button onclick="closeEditDialog()" style="background: #6b7280; color: white; border: none; padding: 12px 24px; border-radius: 5px; margin: 0 10px; cursor: pointer; font-weight: 500;">取消</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(editDialog);
+            window.currentEditDialog = editDialog;
+        };
+
+        // 删除题目
+        window.deleteQuestion = function(index) {
+            if (confirm('确定要删除这道题目吗？')) {
+                window.currentParsedQuestions.splice(index, 1);
+                showManualEdit(); // 重新显示编辑界面
+            }
+        };
+
+        // 添加新题目
+        window.addNewQuestion = function() {
+            const newQuestion = createQuestion('新题目', '新答案', window.currentParsedQuestions.length);
+            window.currentParsedQuestions.push(newQuestion);
+            showManualEdit(); // 重新显示编辑界面
+        };
+
+        // 保存编辑后的题目
+        window.saveEditedQuestions = async function() {
+            const questions = window.currentParsedQuestions;
+            
+            // 更新题目内容
+            for (let i = 0; i < questions.length; i++) {
+                const questionInput = document.getElementById(`editQ_${i}`);
+                const answerInput = document.getElementById(`editA_${i}`);
+                
+                if (questionInput && answerInput) {
+                    questions[i].question = questionInput.value.trim();
+                    questions[i].answer = answerInput.value.trim();
+                }
+            }
+            
+            // 过滤掉空题目
+            const validQuestions = questions.filter(q => q.question && q.answer);
+            
+            if (validQuestions.length === 0) {
+                alert('没有有效的题目可以导入');
+                return;
+            }
+            
+            try {
+                for (let i = 0; i < validQuestions.length; i++) {
+                    validQuestions[i].order = window.AppState.questions.length + i;
+                    await window.saveQuestionToCloud(validQuestions[i], window.AppState.questions.length + i);
+                }
+                
+                closeEditDialog();
+                hideTextImport();
+                alert(`成功导入 ${validQuestions.length} 道题目`);
+                
+                if (window.AppState.questions.length === 0) {
+                    setTimeout(() => {
+                        switchTab('study');
+                    }, 1000);
+                }
+            } catch (error) {
+                alert('导入失败: ' + error.message);
+            }
+        };
+
+        // 关闭预览窗口
+        window.closePreview = function() {
+            if (window.currentPreviewDialog) {
+                document.body.removeChild(window.currentPreviewDialog);
+                window.currentPreviewDialog = null;
+                window.currentParsedQuestions = null;
+            }
+        };
+
+        // 关闭编辑窗口
+        window.closeEditDialog = function() {
+            if (window.currentEditDialog) {
+                document.body.removeChild(window.currentEditDialog);
+                window.currentEditDialog = null;
+                window.currentParsedQuestions = null;
+            }
+        };
 
         // 从文件导入
         function importFromFile(event) {
@@ -1897,4 +2201,7 @@ A: 这是第二道题的答案
         });
     </script>
 </body>
-</html>
+</html>册成功！');
+            } catch (error) {
+                console.error('注册失败:', error);
+                alert('注
