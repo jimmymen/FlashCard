@@ -564,6 +564,30 @@
             cursor: not-allowed;
         }
 
+        /* 退出复习模式按钮样式 */
+        .nav-btn.exit-review {
+            background: #ef4444;
+            color: white;
+            border-color: #ef4444;
+        }
+
+        .nav-btn.exit-review:hover {
+            background: #dc2626;
+            border-color: #dc2626;
+        }
+
+        /* 模式指示器样式 */
+        .mode-indicator {
+            text-align: center;
+            background: #fef3c7;
+            color: #f59e0b;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-weight: 500;
+            border: 1px solid #fbbf24;
+        }
+
         /* 快捷键提示 */
         .keyboard-hints {
             text-align: center;
@@ -1477,8 +1501,16 @@ A: 这是第二道题的答案
                     <button class="nav-btn" onclick="nextQuestion()" ${window.AppState.currentIndex === currentQuestions.length - 1 ? 'disabled' : ''}>
                         下一题 →
                     </button>
+                    ${window.AppState.studyMode === 'review' ? 
+                        '<button class="nav-btn exit-review" onclick="exitReviewMode()">退出复习模式</button>' : 
+                        ''}
                 </div>
             `;
+            
+            const modeIndicator = window.AppState.studyMode === 'review' ? 
+                `<div class="mode-indicator">
+                    🔄 复习模式 - 正在复习标记为 ${window.AppState.reviewFilters.join('、')} 的题目
+                </div>` : '';
             
             const keyboardHints = `
                 <div class="keyboard-hints">
@@ -1487,10 +1519,12 @@ A: 这是第二道题的答案
                     ← → 方向键 = 上一题/下一题 | 
                     Enter = 下一题 | 
                     1234 = 标记题目
+                    ${window.AppState.studyMode === 'review' ? ' | ESC = 退出复习模式' : ''}
                 </div>
             `;
             
             studyContent.innerHTML = `
+                ${modeIndicator}
                 <div class="study-card">
                     <div class="question">${currentQ.question}</div>
                     <div class="answer ${window.AppState.showingAnswer ? 'show' : ''}" id="answerDiv">${currentQ.answer}</div>
@@ -1511,6 +1545,25 @@ A: 这是第二道题的答案
                 question: currentQ.question.substring(0, 50) + '...',
                 totalQuestions: currentQuestions.length
             });
+        }
+
+        // 退出复习模式
+        async function exitReviewMode() {
+            if (confirm('确定要退出复习模式吗？')) {
+                window.AppState.studyMode = 'normal';
+                window.AppState.reviewFilters = [];
+                window.AppState.reviewQuestions = [];
+                window.AppState.currentIndex = 0;
+                window.AppState.showingAnswer = false;
+                
+                await window.saveProgressToCloud();
+                showQuestion();
+                
+                // 提示用户
+                setTimeout(() => {
+                    alert('已退出复习模式，回到正常学习模式');
+                }, 100);
+            }
         }
 
         // 切换答案显示
@@ -1822,6 +1875,11 @@ A: 这是第二道题的答案
                 case 'ArrowLeft':
                     e.preventDefault();
                     previousQuestion();
+                    break;
+                case 'Escape':
+                    if (window.AppState.studyMode === 'review') {
+                        exitReviewMode();
+                    }
                     break;
                 case '1':
                     setMark('unmarked');
