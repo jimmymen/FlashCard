@@ -1,193 +1,287 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>飞机加油快速计算器 (自动单位)</title>
+    <title>专业飞机加油计算器</title>
     <style>
+        :root {
+            --primary-color: #0056b3;
+            --bg-color: #f0f2f5;
+            --card-bg: #ffffff;
+        }
         body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f7f6;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
             padding: 20px;
-            max-width: 550px;
+            margin: 0;
+            color: #333;
+        }
+        .container {
+            max-width: 600px;
             margin: 0 auto;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            background: var(--card-bg);
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 6px 12px rgba(0,0,0,0.08);
         }
         h2 {
-            color: #004a99;
+            color: var(--primary-color);
             text-align: center;
-            border-bottom: 2px solid #004a99;
-            padding-bottom: 10px;
+            margin-top: 0;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 15px;
+        }
+        .section {
             margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
         }
         label {
             display: block;
-            margin-top: 20px;
-            font-weight: bold;
-            color: #333;
-        }
-        input[type="number"] {
-            width: 100%;
-            padding: 10px;
-            margin-top: 5px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            box-sizing: border-box;
-            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #444;
         }
         .input-group {
             display: flex;
-            gap: 15px; /* Adds space between the two input boxes */
+            gap: 10px;
         }
         .input-wrapper {
-            flex: 1; /* Each input takes up equal space */
+            flex: 1;
+            position: relative;
         }
-        .result-box {
-            background-color: #e6f7ff;
-            border: 2px solid #007bff;
-            padding: 15px;
-            margin-top: 30px;
+        .input-wrapper input {
+            width: 100%;
+            padding: 12px;
+            padding-right: 40px; /* Space for unit */
+            border: 1px solid #ccc;
             border-radius: 6px;
+            font-size: 16px;
+            box-sizing: border-box;
+            transition: border-color 0.3s;
+        }
+        .input-wrapper input:focus {
+            border-color: var(--primary-color);
+            outline: none;
+        }
+        .input-label-suffix {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #888;
+            font-size: 0.9em;
+            pointer-events: none;
+        }
+        
+        /* 密度设置样式 */
+        .density-group {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .density-input {
+            width: 120px !important;
             text-align: center;
+            font-weight: bold;
+            color: #000;
+        }
+
+        /* 结果区域样式 */
+        .result-box {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border: 1px solid #90caf9;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            margin-top: 20px;
+        }
+        .result-title {
+            font-size: 14px;
+            color: #0056b3;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
         #resultVolume {
-            font-size: 36px;
-            font-weight: bold;
-            color: #d9534f;
-            display: block;
-            margin-top: 5px;
+            font-size: 42px;
+            font-weight: 800;
+            color: #d32f2f;
+            font-family: monospace; /* 数字等宽更专业 */
         }
-        .unit {
-            font-size: 1.1em;
-            color: #333;
-            margin-left: 5px;
+        .result-unit {
+            font-size: 18px;
+            color: #555;
+            font-weight: normal;
         }
-        .note {
-            font-size: 0.9em;
-            color: #6a6a6a;
-            margin-top: 20px;
-            padding: 10px;
-            border-left: 3px solid #17a2b8;
-            background-color: #e7f7fa;
+
+        /* 按钮 */
+        .btn-reset {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+            margin-top: 15px;
+            transition: background 0.2s;
+        }
+        .btn-reset:hover {
+            background-color: #5a6268;
+        }
+
+        /* 移动端适配 */
+        @media (max-width: 480px) {
+            .input-group {
+                flex-direction: column;
+            }
+            #resultVolume {
+                font-size: 36px;
+            }
         }
     </style>
 </head>
 <body>
 
-    <h2>✈️ 燃油快速计算器 (升)</h2>
+<div class="container">
+    <h2>✈️ 燃油加油计算器</h2>
 
-    <!-- 目标总油量 -->
-    <label>1. 所需目标总油量 (输入任意一个)</label>
-    <div class="input-group">
-        <div class="input-wrapper">
-            <span class="unit">吨 (t)</span>
-            <input type="number" id="requiredTons" value="15.0" step="0.1" oninput="handleInput('required', 'tons')">
-        </div>
-        <div class="input-wrapper">
-            <span class="unit">磅 (lbs)</span>
-            <input type="number" id="requiredPounds" step="100" oninput="handleInput('required', 'pounds')">
+    <!-- 密度设置 -->
+    <div class="section density-group">
+        <label style="margin:0;">当前燃油密度 (kg/L):</label>
+        <div class="input-wrapper" style="flex: 0 0 auto;">
+            <input type="number" id="density" value="0.800" step="0.001" class="density-input" oninput="calculate()">
         </div>
     </div>
 
-    <!-- 飞机剩余油量 -->
-    <label>2. 飞机剩余油量 (输入任意一个)</label>
-    <div class="input-group">
-        <div class="input-wrapper">
-            <span class="unit">吨 (t)</span>
-            <input type="number" id="remainingTons" value="10.2" step="0.1" oninput="handleInput('remaining', 'tons')">
-        </div>
-        <div class="input-wrapper">
-            <span class="unit">磅 (lbs)</span>
-            <input type="number" id="remainingPounds" step="100" oninput="handleInput('remaining', 'pounds')">
+    <!-- 目标油量 -->
+    <div class="section">
+        <label>1. 目标总油量 (Target Fuel)</label>
+        <div class="input-group">
+            <div class="input-wrapper">
+                <input type="number" id="targetTons" placeholder="0" step="0.1" oninput="syncUnits('target', 'tons')">
+                <span class="input-label-suffix">吨</span>
+            </div>
+            <div class="input-wrapper">
+                <input type="number" id="targetLbs" placeholder="0" step="100" oninput="syncUnits('target', 'lbs')">
+                <span class="input-label-suffix">磅</span>
+            </div>
         </div>
     </div>
 
-    <!-- 结果显示 -->
+    <!-- 剩余油量 -->
+    <div class="section">
+        <label>2. 飞机剩余油量 (Remaining Fuel)</label>
+        <div class="input-group">
+            <div class="input-wrapper">
+                <input type="number" id="remTons" placeholder="0" step="0.1" oninput="syncUnits('rem', 'tons')">
+                <span class="input-label-suffix">吨</span>
+            </div>
+            <div class="input-wrapper">
+                <input type="number" id="remLbs" placeholder="0" step="100" oninput="syncUnits('rem', 'lbs')">
+                <span class="input-label-suffix">磅</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 结果 -->
     <div class="result-box">
-        <label>所需加注体积 (最终结果):</label>
-        <span id="resultVolume">0.00</span>
-        <span class="unit">升 (L)</span>
+        <div class="result-title">需要加注体积 / Upload Volume</div>
+        <div>
+            <span id="resultVolume">0</span>
+            <span class="result-unit">升 (L)</span>
+        </div>
+        <div style="margin-top:5px; font-size: 0.85em; color: #666;">
+            预计加注重量: <span id="resultWeight">0</span> kg
+        </div>
     </div>
 
-    <div class="note">
-        **提示:** 燃油密度已固定为 <strong>0.8 kg/L</strong>。您只需在任意单位的输入框中填入数字，计算器将自动计算。
-    </div>
+    <button class="btn-reset" onclick="resetForm()">重置所有数据</button>
+</div>
 
-    <script>
-        // --- 全局常量 ---
-        const POUNDS_PER_KG = 2.20462; // 1 kg ≈ 2.20462 lbs
-        const KG_PER_TON = 1000;       // 1 ton = 1000 kg
-        const DENSITY = 0.8;           // 固定的燃油密度 (kg/L)
+<script>
+    // 常量定义
+    const LBS_PER_TON = 2204.62262;
+    const KG_PER_TON = 1000;
 
-        // --- 获取输入框元素 ---
-        const requiredTonsInput = document.getElementById('requiredTons');
-        const requiredPoundsInput = document.getElementById('requiredPounds');
-        const remainingTonsInput = document.getElementById('remainingTons');
-        const remainingPoundsInput = document.getElementById('remainingPounds');
+    // DOM 元素
+    const els = {
+        density: document.getElementById('density'),
+        targetTons: document.getElementById('targetTons'),
+        targetLbs: document.getElementById('targetLbs'),
+        remTons: document.getElementById('remTons'),
+        remLbs: document.getElementById('remLbs'),
+        resVol: document.getElementById('resultVolume'),
+        resWeight: document.getElementById('resultWeight')
+    };
 
-        // --- 输入处理函数：当用户在一个框输入时，清空另一个框 ---
-        function handleInput(type, unit) {
-            if (type === 'required') {
-                if (unit === 'tons') {
-                    requiredPoundsInput.value = '';
-                } else {
-                    requiredTonsInput.value = '';
-                }
-            } else if (type === 'remaining') {
-                if (unit === 'tons') {
-                    remainingPoundsInput.value = '';
-                } else {
-                    remainingTonsInput.value = '';
-                }
+    /**
+     * 同步单位输入
+     * 当用户输入吨时，自动计算磅；反之亦然。
+     * @param {string} type - 'target' 或 'rem'
+     * @param {string} unit - 'tons' 或 'lbs'
+     */
+    function syncUnits(type, unit) {
+        const tonsInput = type === 'target' ? els.targetTons : els.remTons;
+        const lbsInput = type === 'target' ? els.targetLbs : els.remLbs;
+
+        if (unit === 'tons') {
+            const val = parseFloat(tonsInput.value);
+            if (!isNaN(val)) {
+                lbsInput.value = (val * LBS_PER_TON).toFixed(0); // 磅通常取整
+            } else {
+                lbsInput.value = '';
             }
-            calculateFuel(); // 每次输入后都重新计算
+        } else {
+            const val = parseFloat(lbsInput.value);
+            if (!isNaN(val)) {
+                tonsInput.value = (val / LBS_PER_TON).toFixed(3); // 吨保留3位小数
+            } else {
+                tonsInput.value = '';
+            }
         }
+        calculate();
+    }
 
-        // --- 主计算函数 ---
-        function calculateFuel() {
-            // 1. 获取目标油量并统一换算成千克 (kg)
-            let requiredWeightKg = 0;
-            const requiredTons = parseFloat(requiredTonsInput.value);
-            const requiredPounds = parseFloat(requiredPoundsInput.value);
+    /**
+     * 核心计算逻辑
+     * 统一使用“吨”作为基准进行计算
+     */
+    function calculate() {
+        const density = parseFloat(els.density.value) || 0.8;
+        
+        // 获取吨数输入 (如果为空则视为0)
+        const targetT = parseFloat(els.targetTons.value) || 0;
+        const remT = parseFloat(els.remTons.value) || 0;
 
-            if (!isNaN(requiredTons) && requiredTonsInput.value) {
-                requiredWeightKg = requiredTons * KG_PER_TON;
-            } else if (!isNaN(requiredPounds) && requiredPoundsInput.value) {
-                requiredWeightKg = requiredPounds / POUNDS_PER_KG;
-            }
+        // 计算差值 (吨)
+        let diffTons = targetT - remT;
+        if (diffTons < 0) diffTons = 0;
 
-            // 2. 获取剩余油量并统一换算成千克 (kg)
-            let remainingWeightKg = 0;
-            const remainingTons = parseFloat(remainingTonsInput.value);
-            const remainingPounds = parseFloat(remainingPoundsInput.value);
+        // 转换为千克
+        const diffKg = diffTons * KG_PER_TON;
 
-            if (!isNaN(remainingTons) && remainingTonsInput.value) {
-                remainingWeightKg = remainingTons * KG_PER_TON;
-            } else if (!isNaN(remainingPounds) && remainingPoundsInput.value) {
-                remainingWeightKg = remainingPounds / POUNDS_PER_KG;
-            }
+        // 计算体积 = 质量 / 密度
+        const volume = diffKg / density;
 
-            // 3. 计算需要加注的净重量 (kg)
-            let netWeightKg = requiredWeightKg - remainingWeightKg;
-            if (netWeightKg < 0) {
-                netWeightKg = 0; // 避免负数
-            }
+        // 更新UI
+        // 显示体积 (整数或1位小数即可，加油车通常精确到升)
+        els.resVol.textContent = volume.toLocaleString('en-US', { maximumFractionDigits: 0 }); 
+        els.resWeight.textContent = diffKg.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    }
 
-            // 4. 根据固定密度计算体积 (升)
-            // 体积 (L) = 重量 (kg) / 密度 (kg/L)
-            const resultVolume = netWeightKg / DENSITY;
-
-            // 5. 显示最终结果
-            document.getElementById('resultVolume').textContent = resultVolume.toFixed(2);
-        }
-
-        // --- 初始化：页面加载时执行一次计算 ---
-        window.onload = function() {
-            calculateFuel();
-        };
-    </script>
+    function resetForm() {
+        const inputs = document.querySelectorAll('input:not(#density)');
+        inputs.forEach(input => input.value = '');
+        els.density.value = "0.800"; // 重置密度到默认
+        calculate();
+    }
+</script>
 
 </body>
 </html>
